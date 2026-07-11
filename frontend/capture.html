@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>TrustGuard AI</title>
+
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+<div class="container">
+
+    <!-- Header -->
+    <header>
+        <h1>🛡 TrustGuard AI</h1>
+        <p>Adaptive Zero-Trust Continuous Authentication</p>
+    </header>
+
+    <!-- Status -->
+    <div class="status-bar">
+
+        <div class="status">
+            🟢 ACTIVE SESSION
+        </div>
+
+        <div class="trust">
+            <p>Trust Score</p>
+            <h2 id="trustScore">100%</h2>
+        </div>
+
+    </div>
+
+    <!-- Trust Progress -->
+    <div class="progress">
+        <div id="progressBar"></div>
+    </div>
+
+    <!-- Typing Area -->
+    <textarea
+        id="typingArea"
+        placeholder="Start typing here..."></textarea>
+
+    <!-- Live Statistics -->
+    <div class="cards">
+
+        <div class="card">
+            <h3>⌨ Dwell Time</h3>
+            <p id="dwell">0 ms</p>
+        </div>
+
+        <div class="card">
+            <h3>⌨ Flight Time</h3>
+            <p id="flight">0 ms</p>
+        </div>
+
+        <div class="card">
+            <h3>⚡ Typing Speed</h3>
+            <p id="speed">0 cps</p>
+        </div>
+
+        <div class="card">
+            <h3>🖱 Mouse Velocity</h3>
+            <p id="velocity">0 px/s</p>
+        </div>
+
+        <div class="card">
+            <h3>🖱 Clicks</h3>
+            <p id="clicks">0</p>
+        </div>
+
+        <div class="card">
+            <h3>⏱ Session Time</h3>
+            <p id="sessionTime">0 s</p>
+        </div>
+
+    </div>
+
+    <!-- Feature Vector -->
+    <h2 class="section-title">Feature Vector</h2>
+
+    <div class="cards">
+
+        <div class="card">
+            <h3>Average Dwell</h3>
+            <p id="avgDwell">0 ms</p>
+        </div>
+
+        <div class="card">
+            <h3>Std. Dwell</h3>
+            <p id="stdDwell">0 ms</p>
+        </div>
+
+        <div class="card">
+            <h3>Average Flight</h3>
+            <p id="avgFlight">0 ms</p>
+        </div>
+
+        <div class="card">
+            <h3>Std. Flight</h3>
+            <p id="stdFlight">0 ms</p>
+        </div>
+
+        <div class="card">
+            <h3>Average Mouse Speed</h3>
+            <p id="avgVelocity">0 px/s</p>
+        </div>
+
+        <div class="card">
+            <h3>Session Duration</h3>
+            <p id="featureSessionTime">0 s</p>
+        </div>
+
+    </div>
+
+    <!-- Alerts -->
+    <div class="alert">
+
+        <h2>System Status</h2>
+
+        <p id="alertText">
+            ✔ Genuine User
+        </p>
+
+    </div>
+
+    <!-- Buttons -->
+    <div class="buttons">
+
+        <button id="startBtn">
+            ▶ Start Session
+        </button>
+
+        <button id="resetBtn">
+            🔄 Reset
+        </button>
+
+        <button id="exportBtn">
+            📥 Export JSON
+        </button>
+
+    </div>
+
+</div>
+
+<script src="utils.js"></script>
+<script src="script.js"></script>
+
+</body>
+</html>
