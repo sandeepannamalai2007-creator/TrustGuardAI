@@ -8,8 +8,11 @@ __pycache__/
 # VS Code
 .vscode/
 
-# ML Model
-ml/saved_model/
+# ML Model (allow pre-trained models in repository)
+# ml/saved_model/
+
+# Databases
+*.db
 
 # OS Files
 Thumbs.db

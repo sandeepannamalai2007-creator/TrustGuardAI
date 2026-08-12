@@ -1,152 +1,373 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-    <title>TrustGuard AI</title>
-
+    <title>TrustGuard AI Dashboard</title>
+    
+    <!-- Premium Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    
     <link rel="stylesheet" href="style.css">
 </head>
-
 <body>
 
-<div class="container">
+<canvas id="bgCanvas"></canvas>
 
-    <!-- Header -->
-    <header>
-        <h1>🛡 TrustGuard AI</h1>
-        <p>Adaptive Zero-Trust Continuous Authentication</p>
+<!-- Hidden SVG gradients for circular progress bars -->
+<svg style="width:0;height:0;position:absolute;" aria-hidden="true" focusable="false">
+  <defs>
+    <linearGradient id="genuineGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10b981" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+    <linearGradient id="warningGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f59e0b" />
+      <stop offset="100%" stop-color="#d97706" />
+    </linearGradient>
+    <linearGradient id="suspiciousGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ef4444" />
+      <stop offset="100%" stop-color="#dc2626" />
+    </linearGradient>
+  </defs>
+</svg>
+
+<div class="dashboard-wrapper">
+    
+    <!-- Left Navigation/Status Panel -->
+    <header class="app-header">
+        <div class="brand">
+            <span class="shield-icon">🛡️</span>
+            <div>
+                <h1>TrustGuard AI</h1>
+                <p class="tagline">Zero-Trust Continuous Biometrics</p>
+            </div>
+        </div>
+        
+        <div class="session-badge-container">
+            <span id="sessionStatusBadge" class="session-badge" style="background: rgba(255,255,255,0.02); border-color: rgba(255,255,255,0.1); color: var(--text-muted); box-shadow: none;">⚪ INACTIVE</span>
+        </div>
     </header>
 
-    <!-- Status -->
-    <div class="status-bar">
-
-        <div class="status">
-            🟢 ACTIVE SESSION
-        </div>
-
-        <div class="trust">
-            <p>Trust Score</p>
-            <h2 id="trustScore">100%</h2>
-        </div>
-
+    <!-- Backend Connection Banner -->
+    <div id="backendBanner" class="backend-banner backend-hidden">
+        <span id="backendBannerText">⚠ Connecting to security nodes...</span>
     </div>
 
-    <!-- Trust Progress -->
-    <div class="progress">
-        <div id="progressBar"></div>
-    </div>
-
-    <!-- Typing Area -->
-    <textarea
-        id="typingArea"
-        placeholder="Start typing here..."></textarea>
-
-    <!-- Live Statistics -->
-    <div class="cards">
-
-        <div class="card">
-            <h3>⌨ Dwell Time</h3>
-            <p id="dwell">0 ms</p>
+    <!-- Master Grid Layout -->
+    <main class="dashboard-grid">
+        
+        <!-- COLUMN 1: INTERACTION & CONTROL -->
+        <section class="grid-col interaction-pane">
+            
+        <!-- Typing Workstation Card -->
+        <div class="card glass workstation-card">
+            <div class="card-header">
+                <h2>⌨️ Secure Keystroke Workstation</h2>
+                <span class="pulse-dot"></span>
+            </div>
+            <p class="description">Enforcing continuous keystroke dynamics verification. Typing triggers telemetry parsing at secure edge nodes.</p>
+            
+            <textarea
+                id="typingArea"
+                placeholder="Begin typing here to verify your behavioral profile..."></textarea>
         </div>
 
-        <div class="card">
-            <h3>⌨ Flight Time</h3>
-            <p id="flight">0 ms</p>
+        <!-- Controller Panel -->
+        <div class="control-panel">
+            <div class="primary-actions">
+                <button id="startBtn" class="btn btn-primary">
+                    <span class="btn-icon">▶</span> Start Session
+                </button>
+                <button id="endBtn" class="btn btn-danger" disabled>
+                    <span class="btn-icon">■</span> End Session
+                </button>
+            </div>
+            
+            <div class="secondary-actions">
+                <button id="resetBtn" class="btn btn-secondary">
+                    🔄 Reset Metrics
+                </button>
+                <button id="exportBtn" class="btn btn-secondary">
+                    📥 Export JSON
+                </button>
+            </div>
         </div>
 
-        <div class="card">
-            <h3>⚡ Typing Speed</h3>
-            <p id="speed">0 cps</p>
+        <!-- Active Security Policy Panel -->
+        <div class="card glass policy-card">
+            <div class="card-header">
+                <h2>🛡️ Active Security Policy</h2>
+                <span class="terminal-badge">ENFORCED</span>
+            </div>
+            <div class="policy-settings">
+                <label for="policySelect" class="policy-label">Sensitivity Tier</label>
+                <select id="policySelect" class="form-select">
+                    <option value="balanced" selected>Balanced Mode (Threshold: 50%)</option>
+                    <option value="strict">Strict Mode (Threshold: 75%)</option>
+                    <option value="relaxed">Relaxed Mode (Threshold: 30%)</option>
+                </select>
+            </div>
         </div>
 
-        <div class="card">
-            <h3>🖱 Mouse Velocity</h3>
-            <p id="velocity">0 px/s</p>
+        <!-- Security Alert Console -->
+        <div id="alertCard" class="card glass alert-card genuine-alert">
+            <div class="alert-header">
+                <span class="alert-shield">🛡️</span>
+                <h3>Identity Authentication Status</h3>
+            </div>
+            <p id="alertText" class="alert-status-text">✔ Genuine User</p>
+            <div class="alert-bar-bg">
+                <!-- Hidden progress bar for script compatibility -->
+                <div id="progressBar" style="width: 100%;"></div>
+            </div>
         </div>
 
-        <div class="card">
-            <h3>🖱 Clicks</h3>
-            <p id="clicks">0</p>
+        <!-- Threat & Attack Simulation Hub -->
+        <div class="card glass simulator-card">
+            <div class="card-header">
+                <h2>🛡️ Threat & Bot Simulator</h2>
+                <span id="simulatorBadge" class="session-badge active-badge human-badge">HUMAN MODE</span>
+            </div>
+            <p class="description">Select attack simulation payload to verify Intrusion Detection System (IDS) alerts.</p>
+                <div class="simulator-buttons">
+                    <button id="simStopBtn" class="btn btn-simulator sim-btn-active">
+                        🟢 Human
+                    </button>
+                    <button id="simBotBtn" class="btn btn-simulator">
+                        🤖 Script Bot
+                    </button>
+                    <button id="simRandBtn" class="btn btn-simulator">
+                        ⚠️ Erratic Attacker
+                    </button>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- COLUMN 2: ANALYTICS & TELEMETRY -->
+        <section class="grid-col telemetry-pane">
+            
+            <!-- Trust Gauge Card -->
+            <div class="card glass trust-gauge-card">
+                <div class="gauge-container genuine-gauge">
+                    <svg class="gauge-svg" viewBox="0 0 100 100">
+                        <circle class="gauge-track" cx="50" cy="50" r="42" />
+                        <circle id="gaugeProgress" class="gauge-progress-bar" cx="50" cy="50" r="42" stroke-dasharray="263.89" stroke-dashoffset="0" />
+                    </svg>
+                    <div class="gauge-overlay">
+                        <h2 id="trustScore">100%</h2>
+                        <span class="gauge-title">IDENTITY TRUST</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Scrolling Telemetry Feed Terminal -->
+            <div class="card glass telemetry-feed-card">
+                <div class="card-header">
+                    <h2>📡 Live Telemetry Stream</h2>
+                    <span class="terminal-badge">LIVE FEED</span>
+                </div>
+                <div id="telemetryFeed" class="feed-terminal">
+                    <div class="feed-entry feed-system">[SYSTEM] Awaiting keystroke and mouse kinematics...</div>
+                </div>
+            </div>
+
+            <!-- Live Kinematics Canvas Visualizer -->
+            <div class="card glass canvas-card">
+                <div class="card-header">
+                    <h2>🖱️ Live Kinematics Canvas</h2>
+                    <span class="pulse-dot"></span>
+                </div>
+                <canvas id="kinematicsCanvas" height="130"></canvas>
+            </div>
+
+        </section>
+
+    </main>
+
+    <!-- SECURE DATABASE AUDIT LEDGER -->
+    <section class="audit-ledger-section">
+        <div class="card glass ledger-card">
+            <div class="card-header">
+                <h2>🔐 Secure Security Audit Ledger (Database Log Analyzer)</h2>
+                <span id="ledgerBadge" class="session-badge active-badge suspicious-badge">LOCKED</span>
+            </div>
+            
+            <!-- Lock Screen Panel -->
+            <div id="ledgerLockPanel" class="ledger-lock-panel">
+                <span class="lock-icon">🔒</span>
+                <p>This ledger accesses raw database tables containing sensitive biometric identity trust records.</p>
+                <div class="pin-entry-group">
+                    <input type="password" id="adminPinInput" placeholder="Enter Admin PIN..." maxlength="8">
+                    <button id="unlockLedgerBtn" class="btn btn-primary">Authorize & Unlock</button>
+                </div>
+                <p id="ledgerErrorMsg" class="error-msg"></p>
+            </div>
+            
+            <!-- Table Panel (Hidden initially) -->
+            <div id="ledgerTablePanel" class="ledger-table-panel hidden-ledger-content">
+                <div class="table-actions">
+                    <button id="refreshLedgerBtn" class="btn btn-secondary">🔄 Refresh Data</button>
+                    <button id="lockLedgerBtn" class="btn btn-secondary">🔒 Lock Ledger</button>
+                </div>
+                <div class="table-scroll-container">
+                    <table class="audit-table">
+                        <thead>
+                            <tr>
+                                <th>Timestamp</th>
+                                <th>Student ID</th>
+                                <th>Session ID</th>
+                                <th>Trust Score</th>
+                                <th>Similarity</th>
+                                <th>Avg Dwell</th>
+                                <th>Avg Flight</th>
+                                <th>Speed (cps)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="auditTableBody">
+                            <tr>
+                                <td colspan="8" class="text-center">No logs loaded yet. Click Refresh.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
+    </section>
 
-        <div class="card">
-            <h3>⏱ Session Time</h3>
-            <p id="sessionTime">0 s</p>
+    <!-- COMPACT BIOMETRIC TELEMETRY & BASELINE COMPARISON -->
+    <section class="analytics-row">
+        <div class="card glass metrics-comparison-card">
+            <div class="card-header">
+                <h2>📊 Biometric Telemetry vs. Baseline Profile</h2>
+                <span class="pulse-dot"></span>
+            </div>
+            <p class="description">Active real-time session metrics compared side-by-side with your authorized database baseline profiles.</p>
+            
+            <div class="metrics-grid">
+                
+                <!-- Dwell Time Comparison -->
+                <div class="metric-comparison-box">
+                    <div class="metric-info">
+                        <span class="metric-icon">⏱️</span>
+                        <div>
+                            <h4>Dwell Time</h4>
+                            <span class="metric-desc">Key hold duration</span>
+                        </div>
+                    </div>
+                    <div class="metric-values">
+                        <div class="value-block">
+                            <span class="value-label">LIVE VALUE</span>
+                            <span id="dwell" class="value-highlight">0 ms</span>
+                        </div>
+                        <div class="value-block">
+                            <span class="value-label">BASELINE MEAN</span>
+                            <span id="avgDwell" class="value-baseline">0 ms</span>
+                        </div>
+                        <div class="value-block">
+                            <span class="value-label">DEVIATION (SD)</span>
+                            <span id="stdDwell" class="value-baseline">0 ms</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Flight Time Comparison -->
+                <div class="metric-comparison-box">
+                    <div class="metric-info">
+                        <span class="metric-icon">✈️</span>
+                        <div>
+                            <h4>Flight Time</h4>
+                            <span class="metric-desc">Key transition latency</span>
+                        </div>
+                    </div>
+                    <div class="metric-values">
+                        <div class="value-block">
+                            <span class="value-label">LIVE VALUE</span>
+                            <span id="flight" class="value-highlight">0 ms</span>
+                        </div>
+                        <div class="value-block">
+                            <span class="value-label">BASELINE MEAN</span>
+                            <span id="avgFlight" class="value-baseline">0 ms</span>
+                        </div>
+                        <div class="value-block">
+                            <span class="value-label">DEVIATION (SD)</span>
+                            <span id="stdFlight" class="value-baseline">0 ms</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Typing Speed Comparison -->
+                <div class="metric-comparison-box">
+                    <div class="metric-info">
+                        <span class="metric-icon">⚡</span>
+                        <div>
+                            <h4>Typing Speed & Duration</h4>
+                            <span class="metric-desc">Speed & data windows</span>
+                        </div>
+                    </div>
+                    <div class="metric-values">
+                        <div class="value-block">
+                            <span class="value-label">LIVE SPEED</span>
+                            <span id="speed" class="value-highlight">0 cps</span>
+                        </div>
+                        <div class="value-block">
+                            <span class="value-label">TOTAL WINDOWS</span>
+                            <span id="featureSessionTime" class="value-baseline">0 s</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Mouse Velocity Comparison -->
+                <div class="metric-comparison-box">
+                    <div class="metric-info">
+                        <span class="metric-icon">🖱️</span>
+                        <div>
+                            <h4>Mouse Kinematics</h4>
+                            <span class="metric-desc">Live velocity vs baseline mean</span>
+                        </div>
+                    </div>
+                    <div class="metric-values">
+                        <div class="value-block">
+                            <span class="value-label">LIVE VELOCITY</span>
+                            <span id="velocity" class="value-highlight">0 px/s</span>
+                        </div>
+                        <div class="value-block">
+                            <span class="value-label">BASELINE MEAN</span>
+                            <span id="avgVelocity" class="value-baseline">0 px/s</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Session Stats -->
+                <div class="metric-comparison-box">
+                    <div class="metric-info">
+                        <span class="metric-icon">⏳</span>
+                        <div>
+                            <h4>Session Session Stats</h4>
+                            <span class="metric-desc">Elapsed counters</span>
+                        </div>
+                    </div>
+                    <div class="metric-values">
+                        <div class="value-block">
+                            <span class="value-label">TOTAL CLICKS</span>
+                            <span id="clicks" class="value-highlight">0</span>
+                        </div>
+                        <div class="value-block">
+                            <span class="value-label">ELAPSED TIME</span>
+                            <span id="sessionTime" class="value-highlight">0 s</span>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
         </div>
-
-    </div>
-
-    <!-- Feature Vector -->
-    <h2 class="section-title">Feature Vector</h2>
-
-    <div class="cards">
-
-        <div class="card">
-            <h3>Average Dwell</h3>
-            <p id="avgDwell">0 ms</p>
-        </div>
-
-        <div class="card">
-            <h3>Std. Dwell</h3>
-            <p id="stdDwell">0 ms</p>
-        </div>
-
-        <div class="card">
-            <h3>Average Flight</h3>
-            <p id="avgFlight">0 ms</p>
-        </div>
-
-        <div class="card">
-            <h3>Std. Flight</h3>
-            <p id="stdFlight">0 ms</p>
-        </div>
-
-        <div class="card">
-            <h3>Average Mouse Speed</h3>
-            <p id="avgVelocity">0 px/s</p>
-        </div>
-
-        <div class="card">
-            <h3>Session Duration</h3>
-            <p id="featureSessionTime">0 s</p>
-        </div>
-
-    </div>
-
-    <!-- Alerts -->
-    <div class="alert">
-
-        <h2>System Status</h2>
-
-        <p id="alertText">
-            ✔ Genuine User
-        </p>
-
-    </div>
-
-    <!-- Buttons -->
-    <div class="buttons">
-
-        <button id="startBtn">
-            ▶ Start Session
-        </button>
-
-        <button id="resetBtn">
-            🔄 Reset
-        </button>
-
-        <button id="exportBtn">
-            📥 Export JSON
-        </button>
-
-    </div>
+    </section>
 
 </div>
 
-<script src="utils.js"></script>
 <script src="script.js"></script>
 
 </body>
