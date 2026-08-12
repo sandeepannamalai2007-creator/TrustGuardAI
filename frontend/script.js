@@ -1143,3 +1143,30 @@ function drawBgRain() {
 if (bgCanvas && bgCtx) {
     requestAnimationFrame(drawBgRain);
 }
+
+// ==========================================================================
+// Animated Entry Loader Handler
+// ==========================================================================
+window.addEventListener("DOMContentLoaded", () => {
+    const loader = document.getElementById("appLoader");
+    const wrapper = document.getElementById("dashboardWrapper");
+
+    // Wait 3 seconds for title and fill bar animations to finish
+    setTimeout(() => {
+        if (loader) {
+            loader.classList.add("loader-fade-out");
+        }
+        if (wrapper) {
+            wrapper.classList.add("dashboard-visible");
+        }
+        
+        // Remove element from DOM after fade-out transition completes
+        setTimeout(() => {
+            if (loader && loader.parentNode) {
+                loader.parentNode.removeChild(loader);
+            }
+        }, 800);
+        
+        logTelemetry("Workstation initialized. Zero-trust continuous monitoring offline. Click 'Start Session' to begin.", "system");
+    }, 3000);
+});
