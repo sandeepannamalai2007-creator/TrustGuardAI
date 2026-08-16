@@ -1,4 +1,4 @@
-from predictor import predict_trust_score
+from ml.predictor import predict_trust_score
 
 
 def test_predict_trust_score_returns_valid_range():

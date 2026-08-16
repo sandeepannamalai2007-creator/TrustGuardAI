@@ -12,16 +12,7 @@ ESCALATION_THRESHOLD = 3
 DEESCALATION_THRESHOLD = 2
 TRUST_THRESHOLD = 50
 
-# Add the ml folder to Python path
-sys.path.append(
-    os.path.join(
-        os.path.dirname(__file__),
-        "..",
-        "ml"
-    )
-)
-
-from predictor import predict_trust_score
+from ml.predictor import predict_trust_score
 
 
 def calculate_trust_score(

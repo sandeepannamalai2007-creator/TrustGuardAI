@@ -1,0 +1,11 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "TrustGuardAI"
+version = "0.1.0"
+description = "TrustGuardAI Project"
+
+[tool.hatch.build.targets.wheel]
+packages = ["backend", "ml"]

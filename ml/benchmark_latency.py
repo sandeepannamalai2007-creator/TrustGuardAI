@@ -5,11 +5,7 @@ import numpy as np
 import sys
 import os
 
-# Add paths
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", "backend"))
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", "ml"))
-
-import predictor
+from ml import predictor
 
 def run_benchmarks():
     print("=" * 60)

@@ -4,9 +4,14 @@ import logging
 logger = logging.getLogger(__name__)
 ADMIN_PIN = os.environ.get("TRUSTGUARD_ADMIN_PIN", "1234")
 
-from fastapi import FastAPI, Depends, HTTPException, Header
+from fastapi import FastAPI, Depends, HTTPException, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
+limiter = Limiter(key_func=get_remote_address)
 from profile_service import update_student_profile
 from profile_matcher import compare_with_profile
 
@@ -39,6 +44,8 @@ app = FastAPI(
     title="TrustGuard AI",
     version="2.0"
 )
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Scope CORS to trusted local origins and 'null' to support local file double-clicking
 trusted_origins = [
@@ -76,27 +83,29 @@ def health():
     "/session/start",
     response_model=StartSessionResponse
 )
+@limiter.limit("30/minute")
 def start_session(
-    request: StartSessionRequest,
+    request: Request,
+    payload: StartSessionRequest,
     db: Session = Depends(get_db)
 ):
 
     # Check if the student already exists
-    student = crud.get_student(db, request.user_id)
+    student = crud.get_student(db, payload.user_id)
 
     # Create the student if not found
     if student is None:
         student = crud.create_student(
             db=db,
-            student_id=request.user_id,
-            name=request.user_id,
-            email=f"{request.user_id}@trustguard.local"
+            student_id=payload.user_id,
+            name=payload.user_id,
+            email=f"{payload.user_id}@trustguard.local"
         )
 
     # Create a TrustGuard session
     session = create_session(
-        request.user_id,
-        request.demo_mode
+        payload.user_id,
+        payload.demo_mode
     )
 
     # Create the matching DB-backed exam session so that
@@ -111,62 +120,13 @@ def start_session(
     )
 
 
-@app.post(
-    "/session/features",
-    response_model=FeatureResponse
-)
-def receive_features(
-    request: FeatureRequest,
-    db: Session = Depends(get_db)
-):
-    logger.debug("receive_features() called")
-
-    session = get_session(request.session_id)
-
-    if session is None:
-        return FeatureResponse(
-            status="error",
-            message="Invalid Session ID",
-            trust_score=0,
-            security_state="LOCKED"
-        )
-
-    # 1. Enforcement Check: If session is already locked, block all API telemetry updates
-    current_state = session.get("security_state", "NORMAL")
-    if current_state == "LOCKED":
-        return FeatureResponse(
-            status="locked",
-            message="Workstation Locked: Continuous security policy violations detected.",
-            trust_score=0.0,
-            security_state="LOCKED"
-        )
-
-    success = add_features(
-        request.session_id,
-        request.model_dump()
-    )
-    
-    if not success:
-        return FeatureResponse(
-            status="error",
-            message="Invalid Session ID",
-            trust_score=0,
-            security_state=current_state
-        )
-    
-    # Reload session from store to get the updated feature list
-    session = get_session(request.session_id)
-
-    student = crud.get_student(db, session["user_id"])
-    logger.debug(f"Student: {student}")
-
+def _process_biometric_evaluation(db: Session, student, request: FeatureRequest):
     similarity_score = 100.0
     has_typing_data = request.avg_dwell_time_ms > 0
     explanations = []
 
     if student and has_typing_data:
         profile = crud.get_behavior_profile(db, student.id)
-
         if profile:
             similarity_score, explanations = compare_with_profile(
                 db,
@@ -180,14 +140,8 @@ def receive_features(
             explanations = ["Profile training in progress - establishing baseline."]
 
         logger.debug(f"Similarity Score: {similarity_score}")
+        trust_score = calculate_trust_score(request.model_dump(), similarity_score)
 
-        # Calculate trust score
-        trust_score = calculate_trust_score(
-            request.model_dump(),
-            similarity_score
-        )
-
-        # Protect user baseline: only update if active sample is highly trusted
         if trust_score >= 50:
             logger.info("Updating profile with trusted sample...")
             update_student_profile(
@@ -206,14 +160,12 @@ def receive_features(
         if not has_typing_data:
             explanations = ["Bypassed validation: No typing data collected during window."]
 
-    # 2. Update the Security State Machine
-    new_state = update_security_state(session, trust_score)
-    save_session(request.session_id, session)
+    return trust_score, similarity_score, explanations
 
-    # 3. Log to SQLite security audit trails
+def _log_security_audit(db: Session, session_id: str, trust_score: float, similarity_score: float, request: FeatureRequest):
     crud.create_trust_log(
         db=db,
-        session_id=session["exam_session_id"],
+        session_id=session_id,
         trust_score=trust_score,
         decision_score=similarity_score,
         avg_dwell=request.avg_dwell_time_ms,
@@ -221,6 +173,35 @@ def receive_features(
         typing_speed=request.typing_speed_cps,
         avg_mouse_velocity=request.avg_mouse_velocity_px_s
     )
+
+@app.post(
+    "/session/features",
+    response_model=FeatureResponse
+)
+def receive_features(
+    request: FeatureRequest,
+    db: Session = Depends(get_db)
+):
+    logger.debug("receive_features() called")
+    session = get_session(request.session_id)
+    if not session:
+        return FeatureResponse(status="error", message="Invalid Session ID", trust_score=0, security_state="LOCKED")
+
+    current_state = session.get("security_state", "NORMAL")
+    if current_state == "LOCKED":
+        return FeatureResponse(status="locked", message="Workstation Locked: Continuous security policy violations detected.", trust_score=0.0, security_state="LOCKED")
+
+    if not add_features(request.session_id, request.model_dump()):
+        return FeatureResponse(status="error", message="Invalid Session ID", trust_score=0, security_state=current_state)
+
+    session = get_session(request.session_id)
+    student = crud.get_student(db, session["user_id"])
+    
+    trust_score, similarity_score, explanations = _process_biometric_evaluation(db, student, request)
+    new_state = update_security_state(session, trust_score)
+    save_session(request.session_id, session)
+
+    _log_security_audit(db, session["exam_session_id"], trust_score, similarity_score, request)
 
     return FeatureResponse(
         status="locked" if new_state == "LOCKED" else "success",
@@ -255,7 +236,9 @@ def register_student(
 
 
 @app.get("/session/history")
+@limiter.limit("5/minute")
 def get_session_history(
+    request: Request,
     x_admin_pin: str = Header(None),
     db: Session = Depends(get_db)
 ):

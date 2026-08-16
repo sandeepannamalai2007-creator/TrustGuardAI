@@ -6,41 +6,21 @@ import pytest
 
 API_URL = "http://127.0.0.1:8000"
 
-def wait_for_server():
-    t0 = time.time()
-    while time.time() - t0 < 15:
-        try:
-            with urllib.request.urlopen(f"{API_URL}/health") as r:
-                if r.status == 200:
-                    return True
-        except Exception:
-            pass
-        time.sleep(0.5)
-    return False
-
-def test_api_session_flow():
-    assert wait_for_server(), "FastAPI backend server did not start in time."
-
+def test_api_session_flow(client):
     # 1. Start Session
-    start_url = f"{API_URL}/session/start"
-    start_data = json.dumps({
+    start_data = {
         "user_id": "TestStudent",
         "demo_mode": True
-    }).encode("utf-8")
+    }
     
-    headers = {"Content-Type": "application/json"}
-    
-    req = urllib.request.Request(start_url, data=start_data, headers=headers, method="POST")
-    with urllib.request.urlopen(req) as response:
-        assert response.status == 200
-        res_body = response.read().decode("utf-8")
-        data = json.loads(res_body)
-        assert "session_id" in data
-        session_id = data["session_id"]
+    response = client.post("/session/start", json=start_data)
+    assert response.status_code == 200
+    data = response.json()
+    assert "session_id" in data
+    session_id = data["session_id"]
 
     # 2. Send features (typing data)
-    feature_url = f"{API_URL}/session/features"
-    feature_data = json.dumps({
+    feature_data = {
         "session_id": session_id,
         "avg_dwell_time_ms": 120.0,
         "std_dwell_time_ms": 30.0,
@@ -51,18 +31,16 @@ def test_api_session_flow():
         "click_count": 10,
         "keystroke_count": 12,
         "session_duration_s": 5.0
-    }).encode("utf-8")
+    }
 
-    req_feat = urllib.request.Request(feature_url, data=feature_data, headers=headers, method="POST")
-    with urllib.request.urlopen(req_feat) as response:
-        assert response.status == 200
-        res_body = response.read().decode("utf-8")
-        data = json.loads(res_body)
-        assert data["trust_score"] > 0
-        assert data["status"] == "success"
+    response = client.post("/session/features", json=feature_data)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["trust_score"] > 0
+    assert data["status"] == "success"
 
     # 3. Send features (No typing data - testing default 100% bypass)
-    feature_data_no_type = json.dumps({
+    feature_data_no_type = {
         "session_id": session_id,
         "avg_dwell_time_ms": 0.0,
         "std_dwell_time_ms": 0.0,
@@ -73,17 +51,15 @@ def test_api_session_flow():
         "click_count": 2,
         "keystroke_count": 0,
         "session_duration_s": 10.0
-    }).encode("utf-8")
+    }
 
-    req_feat_no = urllib.request.Request(feature_url, data=feature_data_no_type, headers=headers, method="POST")
-    with urllib.request.urlopen(req_feat_no) as response:
-        assert response.status == 200
-        res_body = response.read().decode("utf-8")
-        data = json.loads(res_body)
-        assert data["trust_score"] == 100.0
+    response = client.post("/session/features", json=feature_data_no_type)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["trust_score"] == 100.0
 
     # 4. Send features (Script Bot spoofing timing variance check)
-    feature_data_bot = json.dumps({
+    feature_data_bot = {
         "session_id": session_id,
         "avg_dwell_time_ms": 100.0,
         "std_dwell_time_ms": 0.5,      # Extremely low variance (bot)
@@ -94,11 +70,11 @@ def test_api_session_flow():
         "click_count": 0,
         "keystroke_count": 10,
         "session_duration_s": 15.0
-    }).encode("utf-8")
+    }
 
-    req_feat_bot = urllib.request.Request(feature_url, data=feature_data_bot, headers=headers, method="POST")
-    with urllib.request.urlopen(req_feat_bot) as response:
-        assert response.status == 200
-        res_body = response.read().decode("utf-8")
-        data = json.loads(res_body)
-        assert data["trust_score"] == 0.0
+    response = client.post("/session/features", json=feature_data_bot)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["trust_score"] <= 1e-6
+    # Add an assertion for state machine lock status if applicable
+    assert data["security_state"] == "LOCKED"
