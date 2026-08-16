@@ -72,6 +72,20 @@ def create_behavior_profile(
     return profile
 
 
+def cap_change(current_val: float, new_val: float, max_pct: float = 0.10) -> float:
+    """
+    Limits the adjustment of any baseline parameter to at most max_pct (default 10%)
+    of its current baseline value to prevent sudden poisoning shifts.
+    """
+    if current_val <= 0:
+        return new_val
+    max_delta = current_val * max_pct
+    delta = new_val - current_val
+    if abs(delta) > max_delta:
+        return current_val + (max_delta if delta > 0 else -max_delta)
+    return new_val
+
+
 def update_behavior_profile(
     db: Session,
     profile: BehaviorProfile,
@@ -80,20 +94,26 @@ def update_behavior_profile(
     typing_speed: float,
     mouse_velocity: float,
 ):
+    # Cap changes to prevent malicious parameter drift (Max 10% change per step)
+    capped_dwell = cap_change(profile.avg_dwell_time, avg_dwell_time)
+    capped_flight = cap_change(profile.avg_flight_time, avg_flight_time)
+    capped_speed = cap_change(profile.typing_speed, typing_speed)
+    capped_velocity = cap_change(profile.mouse_velocity, mouse_velocity)
+
     profile.avg_dwell_time = (
-        profile.avg_dwell_time * profile.sample_count + avg_dwell_time
+        profile.avg_dwell_time * profile.sample_count + capped_dwell
     ) / (profile.sample_count + 1)
 
     profile.avg_flight_time = (
-        profile.avg_flight_time * profile.sample_count + avg_flight_time
+        profile.avg_flight_time * profile.sample_count + capped_flight
     ) / (profile.sample_count + 1)
 
     profile.typing_speed = (
-        profile.typing_speed * profile.sample_count + typing_speed
+        profile.typing_speed * profile.sample_count + capped_speed
     ) / (profile.sample_count + 1)
 
     profile.mouse_velocity = (
-        profile.mouse_velocity * profile.sample_count + mouse_velocity
+        profile.mouse_velocity * profile.sample_count + capped_velocity
     ) / (profile.sample_count + 1)
 
     profile.sample_count += 1

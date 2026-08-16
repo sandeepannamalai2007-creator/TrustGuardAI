@@ -30,12 +30,21 @@ app = FastAPI(
     version="2.0"
 )
 
+# Scope CORS to trusted local origins and 'null' to support local file double-clicking
+trusted_origins = [
+    "http://localhost",
+    "http://127.0.0.1",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+    "null"  # Matches browser Origin header when capture.html is opened directly as a file:// URI
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=trusted_origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "X-Admin-PIN"],
 )
 
 
@@ -140,24 +149,26 @@ def receive_features(
 
         print("Similarity Score:", similarity_score)
 
-        print("Updating profile...")
-
-        update_student_profile(
-            db=db,
-            student_id=student.id,
-            avg_dwell_time=request.avg_dwell_time_ms,
-            avg_flight_time=request.avg_flight_time_ms,
-            typing_speed=request.typing_speed_cps,
-            mouse_velocity=request.avg_mouse_velocity_px_s
-        )
-
-        print("Profile updated.")
-
-    if has_typing_data:
+        # Calculate trust score first to determine if we should update profile
         trust_score = calculate_trust_score(
             request.model_dump(),
             similarity_score
         )
+
+        # Protect user baseline: only update if active sample is highly trusted
+        if trust_score >= 50:
+            print("Updating profile with trusted sample...")
+            update_student_profile(
+                db=db,
+                student_id=student.id,
+                avg_dwell_time=request.avg_dwell_time_ms,
+                avg_flight_time=request.avg_flight_time_ms,
+                typing_speed=request.typing_speed_cps,
+                mouse_velocity=request.avg_mouse_velocity_px_s
+            )
+            print("Profile updated.")
+        else:
+            print(f"Skipping profile update: trust score {trust_score}% is below threshold.")
     else:
         trust_score = 100.0
 

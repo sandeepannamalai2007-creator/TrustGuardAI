@@ -74,8 +74,11 @@ let lastMouseY = 0;
 let lastMouseTime = Date.now();
 
 let dwellTimes = [];
+let dwellTimestamps = [];
 let flightTimes = [];
+let flightTimestamps = [];
 let mouseVelocities = [];
+let mouseVelocityTimestamps = [];
 
 // ==========================================
 // Live Telemetry Logger
@@ -216,7 +219,7 @@ typingArea.addEventListener("keydown", function (event) {
         // Ignore pauses longer than 2 seconds
         if (flight > 0 && flight < 2000) {
             flightDisplay.textContent = flight + " ms";
-            flightTimes.push(flight);
+            pushFeature(flightTimes, flightTimestamps, flight, 20);
             logTelemetry(`KEY_DN [${event.key}] | Flight: ${flight}ms`, "info");
         } else {
             logTelemetry(`KEY_DN [${event.key}] | Flight: pause`, "info");
@@ -231,7 +234,7 @@ typingArea.addEventListener("keyup", function (event) {
     const dwell = keyUpTime - keyDownTime;
 
     dwellDisplay.textContent = dwell + " ms";
-    dwellTimes.push(dwell);
+    pushFeature(dwellTimes, dwellTimestamps, dwell, 20);
 
     previousKeyUp = keyUpTime;
     typingEndTime = keyUpTime;
@@ -271,7 +274,7 @@ document.addEventListener("mousemove", function (event) {
     if (dt > 0) {
         const velocity = distance / dt;
         velocityDisplay.textContent = velocity.toFixed(2) + " px/s";
-        mouseVelocities.push(velocity);
+        pushFeature(mouseVelocities, mouseVelocityTimestamps, velocity, 100);
     }
 
     lastMouseX = event.clientX;
@@ -286,6 +289,33 @@ document.addEventListener("mousemove", function (event) {
 // ==========================================
 // Utility Functions
 // ==========================================
+function pushFeature(timesArray, tsArray, value, maxLen) {
+    timesArray.push(value);
+    tsArray.push(Date.now());
+    if (timesArray.length > maxLen) {
+        timesArray.shift();
+        tsArray.shift();
+    }
+}
+
+function pruneOldFeatures() {
+    const now = Date.now();
+    const windowMs = 30000; // Drop entries older than 30 seconds
+
+    while (dwellTimestamps.length > 0 && now - dwellTimestamps[0] > windowMs) {
+        dwellTimes.shift();
+        dwellTimestamps.shift();
+    }
+    while (flightTimestamps.length > 0 && now - flightTimestamps[0] > windowMs) {
+        flightTimes.shift();
+        flightTimestamps.shift();
+    }
+    while (mouseVelocityTimestamps.length > 0 && now - mouseVelocityTimestamps[0] > windowMs) {
+        mouseVelocities.shift();
+        mouseVelocityTimestamps.shift();
+    }
+}
+
 function average(arr) {
     if (arr.length === 0) return 0;
     return arr.reduce((a, b) => a + b, 0) / arr.length;
@@ -306,6 +336,9 @@ function standardDeviation(arr) {
 // ==========================================
 async function sendFeatures() {
     console.log(">>> sendFeatures()");
+
+    // Prune old metrics to enforce the time-based sliding window
+    pruneOldFeatures();
 
     if (!sessionId) {
         console.warn("No active session yet — skipping upload cycle.");
@@ -497,8 +530,11 @@ function resetSession() {
 
     // Clear arrays
     dwellTimes = [];
+    dwellTimestamps = [];
     flightTimes = [];
+    flightTimestamps = [];
     mouseVelocities = [];
+    mouseVelocityTimestamps = [];
 
     // Reset displays
     dwellDisplay.textContent = "0 ms";
@@ -833,8 +869,8 @@ function setThreatMode(mode) {
             const dwell = 100.0 + (Math.random() * 0.4 - 0.2); 
             const flight = 100.0 + (Math.random() * 0.4 - 0.2);
             
-            dwellTimes.push(dwell);
-            flightTimes.push(flight);
+            pushFeature(dwellTimes, dwellTimestamps, dwell, 20);
+            pushFeature(flightTimes, flightTimestamps, flight, 20);
             
             totalCharacters++;
             activeTypingTime += 100;
@@ -875,8 +911,8 @@ function setThreatMode(mode) {
             const dwell = 500.0 + (Math.random() * 800.0); 
             const flight = 50.0 + (Math.random() * 150.0);  
             
-            dwellTimes.push(dwell);
-            flightTimes.push(flight);
+            pushFeature(dwellTimes, dwellTimestamps, dwell, 20);
+            pushFeature(flightTimes, flightTimestamps, flight, 20);
             
             totalCharacters++;
             activeTypingTime += dwell;
