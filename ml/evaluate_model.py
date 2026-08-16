@@ -2,7 +2,9 @@ import os
 import sys
 import numpy as np
 import pandas as pd
-import joblib
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Add current folder and backend folder to Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -12,19 +14,19 @@ from preprocess import load_dataset
 from trust_engine import calculate_trust_score
 
 def evaluate_model():
-    print("=" * 65)
-    print("TrustGuard AI - Performance & Biometrics Evaluation")
-    print("=" * 65)
+    logger.info("=" * 65)
+    logger.info("TrustGuard AI - Performance & Biometrics Evaluation")
+    logger.info("=" * 65)
 
     base_dir = os.path.dirname(os.path.abspath(__file__))
     
     # 1. Load dataset
     dataset_path = os.path.join(base_dir, "data", "DSL-StrongPasswordData.csv")
     if not os.path.exists(dataset_path):
-        print(f"Error: Dataset not found at {dataset_path}")
+        logger.error(f"Error: Dataset not found at {dataset_path}")
         return
 
-    print("Loading DSL keystroke dataset...")
+    logger.info("Loading DSL keystroke dataset...")
     df = pd.read_csv(dataset_path)
     
     # Hold Time Columns
@@ -32,7 +34,7 @@ def evaluate_model():
     # Flight Time Columns
     ud_cols = [c for c in df.columns if c.startswith("UD.")]
 
-    print("Engineering features (including timing standard deviations)...")
+    logger.info("Engineering features (including timing standard deviations)...")
     processed = pd.DataFrame()
     processed["avg_dwell_time_ms"] = df[hold_cols].mean(axis=1) * 1000
     processed["std_dwell_time_ms"] = df[hold_cols].std(axis=1) * 1000
@@ -83,7 +85,7 @@ def evaluate_model():
             "session_duration_s": 5.0
         })
 
-    print("\nEvaluating pipeline on dataset...")
+    logger.info("\nEvaluating pipeline on dataset...")
 
     # Human evaluation
     human_scores = []
@@ -123,20 +125,20 @@ def evaluate_model():
     far_random = (random_accepted / len(random_samples)) * 100
     far_overall = ((bot_accepted + random_accepted) / (len(bot_samples) + len(random_samples))) * 100
 
-    print("\n" + "=" * 65)
-    print("HYBRID SYSTEM METRIC EVALUATION REPORT")
-    print("=" * 65)
-    print(f"Total Human Samples Tested    : {num_human}")
-    print(f"Total Attack Samples Tested   : {len(bot_samples) + len(random_samples)}")
-    print(f"False Rejection Rate (FRR)    : {frr:.2f}% (Genuine human blocked)")
-    print(f"False Acceptance Rate (FAR)   : {far_overall:.2f}% (Attacker allowed)")
-    print(f"  - Script Bot FAR            : {far_bot:.2f}%  <-- SUCCESS (Dropped from 100%!)")
-    print(f"  - Random Attacker FAR       : {far_random:.2f}%")
-    print("-" * 65)
-    print(f"Average Human Trust Score     : {np.mean(human_scores):.2f}%")
-    print(f"Average Script Bot Trust Score: {np.mean(bot_scores):.2f}%")
-    print(f"Average Random Trust Score    : {np.mean(random_scores):.2f}%")
-    print("=" * 65)
+    logger.info("\n" + "=" * 65)
+    logger.info("HYBRID SYSTEM METRIC EVALUATION REPORT")
+    logger.info("=" * 65)
+    logger.info(f"Total Human Samples Tested    : {num_human}")
+    logger.info(f"Total Attack Samples Tested   : {len(bot_samples) + len(random_samples)}")
+    logger.info(f"False Rejection Rate (FRR)    : {frr:.2f}% (Genuine human blocked)")
+    logger.info(f"False Acceptance Rate (FAR)   : {far_overall:.2f}% (Attacker allowed)")
+    logger.info(f"  - Script Bot FAR            : {far_bot:.2f}%  <-- SUCCESS (Dropped from 100%!)")
+    logger.info(f"  - Random Attacker FAR       : {far_random:.2f}%")
+    logger.info("-" * 65)
+    logger.info(f"Average Human Trust Score     : {np.mean(human_scores):.2f}%")
+    logger.info(f"Average Script Bot Trust Score: {np.mean(bot_scores):.2f}%")
+    logger.info(f"Average Random Trust Score    : {np.mean(random_scores):.2f}%")
+    logger.info("=" * 65)
 
 if __name__ == "__main__":
     evaluate_model()

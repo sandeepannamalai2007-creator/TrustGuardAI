@@ -1,3 +1,9 @@
+import os
+import logging
+
+logger = logging.getLogger(__name__)
+ADMIN_PIN = os.environ.get("TRUSTGUARD_ADMIN_PIN", "1234")
+
 from fastapi import FastAPI, Depends, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
@@ -39,8 +45,7 @@ trusted_origins = [
     "http://localhost",
     "http://127.0.0.1",
     "http://localhost:8000",
-    "http://127.0.0.1:8000",
-    "null"  # Matches browser Origin header when capture.html is opened directly as a file:// URI
+    "http://127.0.0.1:8000"
 ]
 
 app.add_middleware(
@@ -114,7 +119,7 @@ def receive_features(
     request: FeatureRequest,
     db: Session = Depends(get_db)
 ):
-    print("receive_features() called")
+    logger.debug("receive_features() called")
 
     session = get_session(request.session_id)
 
@@ -141,11 +146,19 @@ def receive_features(
         request.model_dump()
     )
     
+    if not success:
+        return FeatureResponse(
+            status="error",
+            message="Invalid Session ID",
+            trust_score=0,
+            security_state=current_state
+        )
+    
     # Reload session from store to get the updated feature list
     session = get_session(request.session_id)
 
     student = crud.get_student(db, session["user_id"])
-    print("Student:", student)
+    logger.debug(f"Student: {student}")
 
     similarity_score = 100.0
     has_typing_data = request.avg_dwell_time_ms > 0
@@ -166,7 +179,7 @@ def receive_features(
         else:
             explanations = ["Profile training in progress - establishing baseline."]
 
-        print("Similarity Score:", similarity_score)
+        logger.debug(f"Similarity Score: {similarity_score}")
 
         # Calculate trust score
         trust_score = calculate_trust_score(
@@ -176,7 +189,7 @@ def receive_features(
 
         # Protect user baseline: only update if active sample is highly trusted
         if trust_score >= 50:
-            print("Updating profile with trusted sample...")
+            logger.info("Updating profile with trusted sample...")
             update_student_profile(
                 db=db,
                 student_id=student.id,
@@ -185,9 +198,9 @@ def receive_features(
                 typing_speed=request.typing_speed_cps,
                 mouse_velocity=request.avg_mouse_velocity_px_s
             )
-            print("Profile updated.")
+            logger.info("Profile updated.")
         else:
-            print(f"Skipping profile update: trust score {trust_score}% is below threshold.")
+            logger.info(f"Skipping profile update: trust score {trust_score}% is below threshold.")
     else:
         trust_score = 100.0
         if not has_typing_data:
@@ -208,14 +221,6 @@ def receive_features(
         typing_speed=request.typing_speed_cps,
         avg_mouse_velocity=request.avg_mouse_velocity_px_s
     )
-
-    if not success:
-        return FeatureResponse(
-            status="error",
-            message="Invalid Session ID",
-            trust_score=0,
-            security_state=new_state
-        )
 
     return FeatureResponse(
         status="locked" if new_state == "LOCKED" else "success",
@@ -258,7 +263,7 @@ def get_session_history(
     Secure endpoint returning database session trust logs.
     Requires header X-Admin-PIN = "1234".
     """
-    if x_admin_pin != "1234":
+    if x_admin_pin != ADMIN_PIN:
         raise HTTPException(status_code=403, detail="Invalid Admin Security PIN")
 
     logs = crud.get_security_audit_logs(db, limit=50)

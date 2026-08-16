@@ -2,92 +2,96 @@ import os
 import joblib
 import numpy as np
 from sklearn.ensemble import IsolationForest
+import logging
 
 from preprocess import load_dataset, engineer_features
 
+logger = logging.getLogger(__name__)
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# ============================================
-# Load Dataset
-# ============================================
+if __name__ == "__main__":
+    # ============================================
+    # Load Dataset
+    # ============================================
 
-print("=" * 60)
-print("Loading Dataset...")
-print("=" * 60)
+    logger.info("=" * 60)
+    logger.info("Loading Dataset...")
+    logger.info("=" * 60)
 
-dataset_path = os.path.join(BASE_DIR, "data", "DSL-StrongPasswordData.csv")
-dataset = load_dataset(dataset_path)
+    dataset_path = os.path.join(BASE_DIR, "data", "DSL-StrongPasswordData.csv")
+    dataset = load_dataset(dataset_path)
 
-print("\nEngineering Features...")
+    logger.info("\nEngineering Features...")
 
-processed = engineer_features(dataset)
-
-
-# ============================================
-# Data Cleaning
-# ============================================
-
-print("\nCleaning Dataset...")
-
-# Remove invalid values
-processed = processed.replace([np.inf, -np.inf], np.nan)
-processed = processed.dropna()
-
-# Remove negative values
-processed = processed.clip(lower=0)
-
-print("Samples after cleaning:", len(processed))
+    processed = engineer_features(dataset)
 
 
-# ============================================
-# Training Data
-# ============================================
+    # ============================================
+    # Data Cleaning
+    # ============================================
 
-X_train = processed[
-    [
-        "avg_dwell_time_ms",
-        "avg_flight_time_ms",
-        "typing_speed_cps"
-    ]
-].values
+    logger.info("\nCleaning Dataset...")
 
-print("\nTraining Shape:", X_train.shape)
+    # Remove invalid values
+    processed = processed.replace([np.inf, -np.inf], np.nan)
+    processed = processed.dropna()
 
+    # Remove negative values
+    processed = processed.clip(lower=0)
 
-# ============================================
-# Train Isolation Forest
-# ============================================
-
-print("\nTraining Isolation Forest...")
-
-model = IsolationForest(
-    n_estimators=300,
-    contamination=0.10,
-    random_state=42
-)
-
-model.fit(X_train)
-
-print("Training Completed Successfully!")
+    logger.info(f"Samples after cleaning: {len(processed)}")
 
 
-# ============================================
-# Save Model
-# ============================================
+    # ============================================
+    # Training Data
+    # ============================================
 
-os.makedirs(os.path.join(BASE_DIR, "saved_model"), exist_ok=True)
+    X_train = processed[
+        [
+            "avg_dwell_time_ms",
+            "avg_flight_time_ms",
+            "typing_speed_cps"
+        ]
+    ].values
 
-MODEL_PATH = os.path.join(
-    BASE_DIR,
-    "saved_model",
-    "trust_model.pkl"
-)
+    logger.info(f"\nTraining Shape: {X_train.shape}")
 
-joblib.dump(model, MODEL_PATH)
 
-print("\nModel Saved Successfully!")
-print(MODEL_PATH)
+    # ============================================
+    # Train Isolation Forest
+    # ============================================
 
-print("=" * 60)
-print("TrustGuard AI Model Ready")
-print("=" * 60)
+    logger.info("\nTraining Isolation Forest...")
+
+    model = IsolationForest(
+        n_estimators=300,
+        contamination=0.10,
+        random_state=42
+    )
+
+    model.fit(X_train)
+
+    logger.info("Training Completed Successfully!")
+
+
+    # ============================================
+    # Save Model
+    # ============================================
+
+    os.makedirs(os.path.join(BASE_DIR, "saved_model"), exist_ok=True)
+
+    MODEL_PATH = os.path.join(
+        BASE_DIR,
+        "saved_model",
+        "trust_model.pkl"
+    )
+
+    joblib.dump(model, MODEL_PATH)
+
+    logger.info("\nModel Saved Successfully!")
+    logger.info(MODEL_PATH)
+
+    logger.info("=" * 60)
+    logger.info("TrustGuard AI Model Ready")
+    logger.info("=" * 60)

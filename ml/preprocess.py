@@ -1,5 +1,8 @@
 import pandas as pd
 import numpy as np
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 PASSWORD_LENGTH = 10
@@ -11,11 +14,11 @@ def load_dataset(path):
     """
     df = pd.read_csv(path)
 
-    print("=" * 50)
-    print("Dataset Loaded Successfully")
-    print("=" * 50)
-    print("Rows    :", df.shape[0])
-    print("Columns :", df.shape[1])
+    logger.info("=" * 50)
+    logger.info("Dataset Loaded Successfully")
+    logger.info("=" * 50)
+    logger.info(f"Rows    : {df.shape[0]}")
+    logger.info(f"Columns : {df.shape[1]}")
 
     return df
 
@@ -32,8 +35,8 @@ def engineer_features(df):
     # Flight Time Columns
     ud_cols = [c for c in df.columns if c.startswith("UD.")]
 
-    print("\nHold Columns :", len(hold_cols))
-    print("Flight Columns :", len(ud_cols))
+    logger.info(f"\nHold Columns : {len(hold_cols)}")
+    logger.info(f"Flight Columns : {len(ud_cols)}")
 
     processed = pd.DataFrame()
 
@@ -70,10 +73,10 @@ if __name__ == "__main__":
 
     processed = engineer_features(dataset)
 
-    print("\nProcessed Features")
+    logger.info("\nProcessed Features")
 
-    print(processed.head())
+    logger.info(f"\n{processed.head()}")
 
-    print("\nStatistics")
+    logger.info("\nStatistics")
 
-    print(processed.describe())
+    logger.info(f"\n{processed.describe()}")

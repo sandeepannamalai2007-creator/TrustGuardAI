@@ -1,3 +1,4 @@
+"""Mahalanobis-distance biometric profile comparison engine."""
 import math
 import numpy as np
 from sqlalchemy.orm import Session

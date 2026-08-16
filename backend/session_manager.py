@@ -2,7 +2,10 @@ import uuid
 import json
 import os
 import sqlite3
+import logging
 from datetime import datetime, timedelta
+
+logger = logging.getLogger(__name__)
 
 # Default Session TTL (1 hour)
 TTL_SECONDS = 3600
@@ -17,9 +20,9 @@ try:
     # Test connection
     redis_client.ping()
     REDIS_CONNECTED = True
-    print("[SUCCESS] Session Manager: Connected to Redis on localhost:6379")
+    logger.info("[SUCCESS] Session Manager: Connected to Redis on localhost:6379")
 except Exception as e:
-    print(f"[WARNING] Session Manager: Redis unavailable ({e}). Falling back to local SQLite session store.")
+    logger.warning(f"[WARNING] Session Manager: Redis unavailable ({e}). Falling back to local SQLite session store.")
 
 # SQLite Fallback Setup
 DB_PATH = os.path.join(os.path.dirname(__file__), "sessions.db")
@@ -67,8 +70,8 @@ def get_session(session_id: str):
             if data:
                 return json.loads(data)
             return None
-        except Exception:
-            pass # Fail open to SQLite lookup if Redis goes down mid-run
+        except Exception as e:
+            logger.debug(f"Redis fallback: {e}") # Fail open to SQLite lookup if Redis goes down mid-run
             
     # SQLite Lookup
     conn = sqlite3.connect(DB_PATH)
@@ -93,8 +96,8 @@ def save_session(session_id: str, session: dict):
         try:
             redis_client.setex(session_id, TTL_SECONDS, json.dumps(session))
             return
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Redis fallback: {e}")
 
     # SQLite Save
     expires_at = datetime.now() + timedelta(seconds=TTL_SECONDS)
@@ -113,8 +116,8 @@ def delete_session(session_id: str):
         try:
             redis_client.delete(session_id)
             return
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Redis fallback: {e}")
             
     # SQLite Delete
     conn = sqlite3.connect(DB_PATH)

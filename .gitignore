@@ -13,6 +13,12 @@ __pycache__/
 
 # Databases
 *.db
+sessions.db
+trustguard.db
+
+# Testing & Pickles
+.pytest_cache/
+*.pkl
 
 # OS Files
 Thumbs.db

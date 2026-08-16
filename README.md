@@ -43,7 +43,7 @@ graph TD
 - ⚡ **Live Mouse Kinematics Visualizer**: Real-time cursor trace tracking path trails and ripple animations for click coordinates.
 - 🤖 **Adversarial Threat Simulator**: Hub to simulate automated script bots (perfect 100ms timings with zero variance) or erratic attackers to verify immediate bot flagging.
 - ⚙️ **Sensitivity Policy Control**: Toggle between **Strict** ($75\%$ threshold), **Balanced** ($50\%$ threshold), and **Relaxed** ($30\%$ threshold) policy levels in real-time.
-- 🔐 **PIN-Authorized Audit Ledger**: Restricts access to past database session history behind a secure admin PIN auth screen (`1234`).
+- 🔐 **PIN-Authorized Audit Ledger**: Restricts access to past database session history behind a secure admin PIN auth screen (configured via TRUSTGUARD_ADMIN_PIN environment variable).
 
 ---
 
@@ -96,7 +96,7 @@ TrustGuardAI/
 ### 2. Setup virtual environment & dependencies
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/TrustGuardAI.git
+git clone https://github.com/sandeepannamalai2007-creator/TrustGuardAI.git
 cd TrustGuardAI
 
 # Create virtual environment
@@ -109,7 +109,7 @@ python -m venv venv
 source venv/bin/activate
 
 # Install dependencies
-pip install fastapi uvicorn scikit-learn pandas numpy sqlalchemy requests
+pip install -r requirements.txt
 ```
 
 ### 3. Run FastAPI Backend
@@ -128,7 +128,7 @@ Simply open the client dashboard file inside your web browser:
 
 ## 🔒 Security Operations Log Table
 
-To review historical session biometric scores, click the **Security Ledger** button at the top right of the dashboard, enter PIN code `1234`, and unlock the query.
+To review historical session biometric scores, click the **Security Ledger** button at the top right of the dashboard, enter the PIN code (configured via TRUSTGUARD_ADMIN_PIN environment variable), and unlock the query.
 
 > [!WARNING]
 > Accessing the ledger hits the `/session/history` route which requires an authorized `X-Admin-PIN` header. Unauthorized queries return a `403 Forbidden` response.

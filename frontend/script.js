@@ -1,7 +1,7 @@
-console.log("SCRIPT LOADED", new Date().toLocaleTimeString());
+// console.log("SCRIPT LOADED", new Date().toLocaleTimeString());
 
 window.addEventListener("beforeunload", () => {
-    console.log("PAGE IS UNLOADING");
+    // console.log("PAGE IS UNLOADING");
 });
 
 // ==========================================
@@ -98,12 +98,20 @@ function logTelemetry(message, type = 'info') {
     entry.className = `feed-entry feed-${type}`;
     
     const time = new Date().toLocaleTimeString().split(" ")[0];
-    entry.innerHTML = `<span class="feed-time">[${time}]</span> <span class="feed-msg">${message}</span>`;
+    const timeSpan = document.createElement('span');
+    timeSpan.className = 'feed-time';
+    timeSpan.textContent = `[${time}]`;
+    const msgSpan = document.createElement('span');
+    msgSpan.className = 'feed-msg';
+    msgSpan.textContent = message;
+    entry.appendChild(timeSpan);
+    entry.appendChild(document.createTextNode(' '));
+    entry.appendChild(msgSpan);
     
     feed.appendChild(entry);
     feed.scrollTop = feed.scrollHeight;
     
-    // Limit log stack to last 30 entries
+    // Limit log stack to last 35 entries
     while (feed.childNodes.length > 35) {
         feed.removeChild(feed.firstChild);
     }
@@ -147,7 +155,7 @@ async function startSession() {
                 "Content-Type": "application/json"
             },
             body: JSON.stringify({
-                user_id: "Sandeep",
+                user_id: document.getElementById('typingArea')?.dataset?.userId || "DemoUser",
                 demo_mode: true
             })
         });
@@ -159,7 +167,7 @@ async function startSession() {
         const data = await response.json();
         sessionId = data.session_id;
 
-        console.log("✅ Session Started:", sessionId);
+        // console.log("✅ Session Started:", sessionId);
         logTelemetry(`Session established. Token: ${sessionId.substring(0, 8)}...`, "api");
         setBackendStatus(true);
 
@@ -198,7 +206,7 @@ function scheduleReconnect() {
     reconnectTimeout = setTimeout(() => {
         reconnectTimeout = null;
         if (!sessionId) {
-            console.log("Attempting to reconnect to backend...");
+            // console.log("Attempting to reconnect to backend...");
             startSession();
         }
     }, 5000);
@@ -336,7 +344,7 @@ function standardDeviation(arr) {
 // Send Features to Backend
 // ==========================================
 async function sendFeatures() {
-    console.log(">>> sendFeatures()");
+    // console.log(">>> sendFeatures()");
 
     // Prune old metrics to enforce the time-based sliding window
     pruneOldFeatures();
@@ -364,11 +372,11 @@ async function sendFeatures() {
         session_duration_s: sessionSeconds
     };
 
-    console.log("About to call backend:", featureVector);
+    // console.log("About to call backend:", featureVector);
     logTelemetry("Uploading behavioral biometrics payload...", "api");
 
     try {
-        const response = await fetch("http://127.0.0.1:8000/session/features", {
+        const response = await fetch(`${API_URL}/session/features`, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json"
@@ -381,7 +389,7 @@ async function sendFeatures() {
         }
 
         const data = await response.json();
-        console.log("Backend Response:", data);
+        // console.log("Backend Response:", data);
         setBackendStatus(true);
 
         if (data.status === "error") {
@@ -438,7 +446,7 @@ async function sendFeatures() {
 // Update Dashboard
 // ==========================================
 function updateDashboard(score) {
-    console.log("updateDashboard()");
+    // console.log("updateDashboard()");
 
     // Update circular gauge score
     trustScoreDisplay.textContent = score + "%";
@@ -502,7 +510,7 @@ function updateDashboard(score) {
 // Reset Session
 // ==========================================
 function resetSession() {
-    console.log(">>> resetSession() EXECUTED <<<");
+    // console.log(">>> resetSession() EXECUTED <<<");
 
     if (uploadInterval) {
         clearInterval(uploadInterval);
@@ -601,7 +609,7 @@ function resetSession() {
     }
     logTelemetry("Security session metrics re-initialized.", "system");
 
-    console.log("Session Reset Complete");
+    // console.log("Session Reset Complete");
 }
 
 // ==========================================
@@ -640,32 +648,32 @@ function exportSession() {
 // Button Events
 // ==========================================
 startBtn.addEventListener("click", async () => {
-    console.log("1. Start button clicked");
+    // console.log("1. Start button clicked");
     resetSession();
-    console.log("2. resetSession completed");
+    // console.log("2. resetSession completed");
     
     if (startBtn) startBtn.disabled = true;
     if (endBtn) endBtn.disabled = false;
     
     await startSession();
-    console.log("3. startSession completed");
+    // console.log("3. startSession completed");
     
     if (uploadInterval) {
         clearInterval(uploadInterval);
     }
 
-    console.log("4. Creating interval");
+    // console.log("4. Creating interval");
     uploadInterval = setInterval(() => {
-        console.log("Interval fired");
+        // console.log("Interval fired");
         sendFeatures();
     }, 5000);
 
-    console.log("5. Interval created", uploadInterval);
+    // console.log("5. Interval created", uploadInterval);
     logTelemetry("Continuous authentication scanning activated.", "system");
 });
 
 resetBtn.addEventListener("click", () => {
-    console.log("🔥 RESET BUTTON CLICKED");
+    // console.log("🔥 RESET BUTTON CLICKED");
     resetSession();
     if (startBtn) startBtn.disabled = false;
     if (endBtn) endBtn.disabled = true;
@@ -676,7 +684,7 @@ exportBtn.addEventListener("click", () => {
 });
 
 endBtn.addEventListener("click", () => {
-    console.log("■ END SESSION CLICKED");
+    // console.log("■ END SESSION CLICKED");
     
     if (uploadInterval) {
         clearInterval(uploadInterval);
@@ -978,7 +986,7 @@ let unlockedPin = null;
 async function fetchAuditLogs(pin) {
     ledgerErrorMsg.textContent = "";
     try {
-        const response = await fetch("http://127.0.0.1:8000/session/history", {
+        const response = await fetch(`${API_URL}/session/history`, {
             method: "GET",
             headers: {
                 "X-Admin-PIN": pin

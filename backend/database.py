@@ -2,6 +2,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SQLite_DB_PATH = os.path.abspath(os.path.join(BASE_DIR, "..", "trustguard.db"))
@@ -23,9 +26,9 @@ if DATABASE_URL and (DATABASE_URL.startswith("postgresql://") or DATABASE_URL.st
         # Test connection
         conn = engine.connect()
         conn.close()
-        print("[SUCCESS] Database Connection: Connected to PostgreSQL database.")
+        logger.info("[SUCCESS] Database Connection: Connected to PostgreSQL database.")
     except Exception as e:
-        print(f"[WARNING] PostgreSQL Connection failed ({e}). Falling back to local SQLite database.")
+        logger.warning(f"[WARNING] PostgreSQL Connection failed ({e}). Falling back to local SQLite database.")
         engine = None
 
 if engine is None:
@@ -35,7 +38,7 @@ if engine is None:
         DATABASE_URL,
         connect_args={"check_same_thread": False}
     )
-    print(f"[INFO] Database Connection: Using local SQLite database at {SQLite_DB_PATH}")
+    logger.info(f"[INFO] Database Connection: Using local SQLite database at {SQLite_DB_PATH}")
 
 SessionLocal = sessionmaker(
     autocommit=False,

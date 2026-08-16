@@ -1,6 +1,9 @@
 import os
 import joblib
 import numpy as np
+import logging
+
+logger = logging.getLogger(__name__)
 
 # ======================================
 # Load Trained Model
@@ -15,9 +18,9 @@ MODEL_PATH = os.path.join(
 model = joblib.load(MODEL_PATH)
 
 try:
-    print("✅ TrustGuard AI model loaded successfully.")
+    logger.info("✅ TrustGuard AI model loaded successfully.")
 except UnicodeEncodeError:
-    print("[SUCCESS] TrustGuard AI model loaded successfully.")
+    logger.info("[SUCCESS] TrustGuard AI model loaded successfully.")
 
 
 def predict_trust_score(features):
@@ -75,13 +78,13 @@ def predict_trust_score(features):
     # Debug Output
     # --------------------------------------
 
-    print("\n================ Prediction ================")
-    print(f"Dwell Time   : {sample[0][0]:.2f} ms")
-    print(f"Flight Time  : {sample[0][1]:.2f} ms")
-    print(f"Typing Speed : {sample[0][2]:.2f} cps")
-    print("--------------------------------------------")
-    print(f"Decision Score : {decision_score:.5f}")
-    print(f"Trust Score    : {trust_score}")
-    print("============================================\n")
+    logger.debug("\n================ Prediction ================")
+    logger.debug(f"Dwell Time   : {sample[0][0]:.2f} ms")
+    logger.debug(f"Flight Time  : {sample[0][1]:.2f} ms")
+    logger.debug(f"Typing Speed : {sample[0][2]:.2f} cps")
+    logger.debug("--------------------------------------------")
+    logger.debug(f"Decision Score : {decision_score:.5f}")
+    logger.debug(f"Trust Score    : {trust_score}")
+    logger.debug("============================================\n")
 
     return trust_score

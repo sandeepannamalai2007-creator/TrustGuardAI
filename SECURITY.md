@@ -5,7 +5,7 @@ This document outlines the security boundaries, limitations, and testing paramet
 ---
 
 ## 🔑 1. Security Audit PIN Gate
-* **Implementation**: Access to the database-backed security logs on the dashboard is protected by an admin PIN check (`1234`).
+* **Implementation**: Access to the database-backed security logs on the dashboard is protected by an admin PIN check (configured via TRUSTGUARD_ADMIN_PIN environment variable).
 * **Limitation**: The PIN authentication is a mock administrative gateway verified on the backend via a simple request header (`X-Admin-PIN`). It is designed to demonstrate data-access visual control in mock dashboards, rather than a production-ready cryptographic role-based access control (RBAC) system.
 * **Production Recommendation**: Real systems should authenticate users via standards like OAuth2 / OpenID Connect and secure logs behind cryptographically signed JSON Web Tokens (JWT) with fine-grained scopes.
 

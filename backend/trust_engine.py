@@ -1,5 +1,16 @@
 import sys
 import os
+import logging
+
+logger = logging.getLogger(__name__)
+
+BOT_STD_THRESHOLD = 2.0
+AI_WEIGHT = 0.7
+SIMILARITY_WEIGHT = 0.3
+MIN_KEYSTROKES_FOR_AI = 5
+ESCALATION_THRESHOLD = 3
+DEESCALATION_THRESHOLD = 2
+TRUST_THRESHOLD = 50
 
 # Add the ml folder to Python path
 sys.path.append(
@@ -29,19 +40,19 @@ def calculate_trust_score(
     # If the user has typed at least 5 characters and standard deviation is < 2ms,
     # it is highly likely an automated typing script.
     keystroke_count = features.get("keystroke_count", 0)
-    if keystroke_count >= 5:
+    if keystroke_count >= MIN_KEYSTROKES_FOR_AI:
         std_dwell = features.get("std_dwell_time_ms", 0.0)
         std_flight = features.get("std_flight_time_ms", 0.0)
         
-        if std_dwell < 2.0 or std_flight < 2.0:
-            print(f"[SECURITY ALERT] Synthetic bot detected! std_dwell={std_dwell:.2f}ms, std_flight={std_flight:.2f}ms")
+        if std_dwell < BOT_STD_THRESHOLD or std_flight < BOT_STD_THRESHOLD:
+            logger.warning(f"[SECURITY ALERT] Synthetic bot detected! std_dwell={std_dwell:.2f}ms, std_flight={std_flight:.2f}ms")
             return 0.0
 
     ai_score = predict_trust_score(features)
 
     final_score = (
-        ai_score * 0.7 +
-        similarity_score * 0.3
+        ai_score * AI_WEIGHT +
+        similarity_score * SIMILARITY_WEIGHT
     )
 
     return round(final_score, 2)
@@ -65,17 +76,17 @@ def update_security_state(session: dict, trust_score: float) -> str:
     high_trust_count = session.get("high_trust_count", 0)
 
     # Bot detection triggers immediate LOCK
-    if trust_score == 0.0:
+    if trust_score <= 1e-6:
         session["security_state"] = "LOCKED"
         session["low_trust_count"] = 0
         session["high_trust_count"] = 0
         return "LOCKED"
 
-    if trust_score < 50.0:
+    if trust_score < TRUST_THRESHOLD:
         low_trust_count += 1
         high_trust_count = 0
         
-        if low_trust_count >= 3:
+        if low_trust_count >= ESCALATION_THRESHOLD:
             if current_state == "NORMAL":
                 current_state = "SUSPICIOUS"
             elif current_state == "SUSPICIOUS":
@@ -87,7 +98,7 @@ def update_security_state(session: dict, trust_score: float) -> str:
         high_trust_count += 1
         low_trust_count = 0
         
-        if high_trust_count >= 2:
+        if high_trust_count >= DEESCALATION_THRESHOLD:
             if current_state == "HIGH_RISK":
                 current_state = "SUSPICIOUS"
             elif current_state == "SUSPICIOUS":
