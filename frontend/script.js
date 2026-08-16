@@ -1105,35 +1105,6 @@ lockLedgerBtn.addEventListener("click", () => {
     lockLedger();
 });
 
-// ==========================================================================
-// 3D Card Hover Tilt Effect
-// ==========================================================================
-const tiltCards = document.querySelectorAll(".card.glass");
-
-tiltCards.forEach(card => {
-    card.addEventListener("mousemove", (e) => {
-        const rect = card.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        
-        const centerX = rect.width / 2;
-        const centerY = rect.height / 2;
-        
-        // Max 6 degrees rotation angle
-        const rotateX = ((centerY - y) / centerY) * 6;
-        const rotateY = ((x - centerX) / centerX) * 6;
-        
-        card.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) translateY(-4px) scale(1.01)`;
-        card.style.boxShadow = `0 15px 35px rgba(56, 189, 248, 0.12)`;
-        card.style.borderColor = `rgba(56, 189, 248, 0.35)`;
-    });
-    
-    card.addEventListener("mouseleave", () => {
-        card.style.transform = `perspective(1000px) rotateX(0deg) rotateY(0deg) translateY(0) scale(1)`;
-        card.style.boxShadow = `0 8px 32px rgba(0, 0, 0, 0.3)`;
-        card.style.borderColor = `rgba(56, 189, 248, 0.15)`;
-    });
-});
 
 
 // ==========================================================================
