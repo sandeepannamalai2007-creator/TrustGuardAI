@@ -1,7 +1,9 @@
-from database import SessionLocal
+from database import SessionLocal, Base, engine
 import crud
 
 def test_db_operations():
+    # Guarantee schema is initialized in the test session SQLite
+    Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
         student = crud.get_student(db, "22CS101")

@@ -142,6 +142,7 @@ def create_trust_log(
     avg_dwell: float,
     avg_flight: float,
     typing_speed: float,
+    avg_mouse_velocity: float,
 ):
     log = TrustLog(
         session_id=session_id,
@@ -149,7 +150,8 @@ def create_trust_log(
         decision_score=decision_score,
         avg_dwell=avg_dwell,
         avg_flight=avg_flight,
-        typing_speed=typing_speed
+        typing_speed=typing_speed,
+        avg_mouse_velocity=avg_mouse_velocity
     )
 
     db.add(log)
@@ -157,6 +159,20 @@ def create_trust_log(
     db.refresh(log)
 
     return log
+
+
+def get_student_feature_history(db: Session, student_id: int):
+    """
+    Fetch all historical genuine trust log features for a given student
+    to build the covariance matrix for the Mahalanobis distance similarity model.
+    """
+    return (
+        db.query(TrustLog)
+        .join(ExamSession, TrustLog.session_id == ExamSession.id)
+        .filter(ExamSession.student_id == student_id)
+        .filter(TrustLog.trust_score >= 50.0)  # Filter out bot/anomaly samples to prevent poisoning
+        .all()
+    )
 
 
 def get_security_audit_logs(db: Session, limit: int = 50):

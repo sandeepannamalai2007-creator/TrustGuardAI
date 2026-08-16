@@ -1,11 +1,26 @@
 import json
 import urllib.request
 import urllib.error
+import time
 import pytest
 
 API_URL = "http://127.0.0.1:8000"
 
+def wait_for_server():
+    t0 = time.time()
+    while time.time() - t0 < 15:
+        try:
+            with urllib.request.urlopen(f"{API_URL}/health") as r:
+                if r.status == 200:
+                    return True
+        except Exception:
+            pass
+        time.sleep(0.5)
+    return False
+
 def test_api_session_flow():
+    assert wait_for_server(), "FastAPI backend server did not start in time."
+
     # 1. Start Session
     start_url = f"{API_URL}/session/start"
     start_data = json.dumps({

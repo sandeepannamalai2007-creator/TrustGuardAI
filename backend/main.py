@@ -4,8 +4,11 @@ from sqlalchemy.orm import Session
 from profile_service import update_student_profile
 from profile_matcher import compare_with_profile
 
-from database import get_db
+from database import get_db, Base, engine
+import db_models
 import crud
+
+Base.metadata.create_all(bind=engine)
 
 from api_models import (
     StartSessionRequest,
@@ -153,6 +156,7 @@ def receive_features(
 
         if profile:
             similarity_score, explanations = compare_with_profile(
+                db,
                 profile,
                 request.avg_dwell_time_ms,
                 request.avg_flight_time_ms,
@@ -201,7 +205,8 @@ def receive_features(
         decision_score=similarity_score,
         avg_dwell=request.avg_dwell_time_ms,
         avg_flight=request.avg_flight_time_ms,
-        typing_speed=request.typing_speed_cps
+        typing_speed=request.typing_speed_cps,
+        avg_mouse_velocity=request.avg_mouse_velocity_px_s
     )
 
     if not success:

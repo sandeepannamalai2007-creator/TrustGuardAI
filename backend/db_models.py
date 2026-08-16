@@ -55,5 +55,6 @@ class TrustLog(Base):
     avg_dwell = Column(Float)
     avg_flight = Column(Float)
     typing_speed = Column(Float)
+    avg_mouse_velocity = Column(Float)
 
     session = relationship("ExamSession", back_populates="trust_logs")

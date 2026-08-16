@@ -1,8 +1,10 @@
-from database import SessionLocal
+from database import SessionLocal, Base, engine
 import crud
 import profile_service
 
 def test_profile_lifecycle():
+    # Guarantee schema is initialized in the test session SQLite
+    Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
         # 1. Setup mock student
@@ -18,7 +20,6 @@ def test_profile_lifecycle():
         # Clean existing behavior profile if present
         profile = crud.get_behavior_profile(db, student.id)
         if profile is not None:
-            # Delete profile directly to clean state
             db.delete(profile)
             db.commit()
 
