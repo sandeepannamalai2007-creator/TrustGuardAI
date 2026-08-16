@@ -60,3 +60,5 @@ class FeatureResponse(BaseModel):
     status: str
     message: str
     trust_score: float
+    security_state: str = "NORMAL"
+    explanations: list[str] = []

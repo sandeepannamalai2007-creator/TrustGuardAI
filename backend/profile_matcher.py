@@ -10,45 +10,51 @@ def compare_with_profile(
 ):
     """
     Compare current behaviour with the stored behaviour profile.
-    Returns a similarity score from 0 to 100.
+    Returns a tuple: (similarity_score from 0 to 100, list of parameter explanation strings).
     """
 
     import math
 
-    def similarity(current, expected):
+    explanations = []
 
+    def similarity_and_explain(current, expected, name):
         if expected == 0:
-            return 100.0
+            return 100.0, f"{name} profile not initialized."
 
         difference = abs(current - expected)
-
-        # Exponential decay: e^(-diff/expected) * 100
-        # If difference is 0, similarity is 100%.
-        # If difference equals expected (100% deviation), similarity is ~36.8%.
-        # Prevents similarity from dropping to 0 immediately for natural typing variations.
+        dev_pct = (difference / expected) * 100.0
         val = math.exp(- (difference / expected)) * 100.0
+        
+        explanation = f"{name} deviated {dev_pct:.1f}% from baseline (Score: {val:.1f}%)"
+        return val, explanation
 
-        return val
-
-    dwell_score = similarity(
+    dwell_score, dwell_explain = similarity_and_explain(
         avg_dwell_time,
-        profile.avg_dwell_time
+        profile.avg_dwell_time,
+        "Dwell time"
     )
+    explanations.append(dwell_explain)
 
-    flight_score = similarity(
+    flight_score, flight_explain = similarity_and_explain(
         avg_flight_time,
-        profile.avg_flight_time
+        profile.avg_flight_time,
+        "Flight time"
     )
+    explanations.append(flight_explain)
 
-    typing_score = similarity(
+    typing_score, typing_explain = similarity_and_explain(
         typing_speed,
-        profile.typing_speed
+        profile.typing_speed,
+        "Typing speed"
     )
+    explanations.append(typing_explain)
 
-    mouse_score = similarity(
+    mouse_score, mouse_explain = similarity_and_explain(
         mouse_velocity,
-        profile.mouse_velocity
+        profile.mouse_velocity,
+        "Mouse velocity"
     )
+    explanations.append(mouse_explain)
 
     overall = (
         dwell_score +
@@ -57,4 +63,4 @@ def compare_with_profile(
         mouse_score
     ) / 4
 
-    return round(overall, 2)
+    return round(overall, 2), explanations

@@ -50,6 +50,7 @@ const backendBannerText = document.getElementById("backendBannerText");
 const API_URL = "http://127.0.0.1:8000";
 
 let sessionId = null;
+let lastSecurityState = "NORMAL";
 let currentThreshold = 50;
 let uploadInterval = null;
 let reconnectTimeout = null;
@@ -391,15 +392,35 @@ async function sendFeatures() {
             return;
         }
 
-        logTelemetry(`Biometrics accepted. Score returned: ${data.trust_score}%`, "api");
+        // Print per-feature comparisons to telemetry feed
+        if (data.explanations && data.explanations.length > 0) {
+            data.explanations.forEach(exp => {
+                logTelemetry(`[COMPARE] ${exp}`, "info");
+            });
+        }
+
+        // Monitor security state machine transitions
+        if (data.security_state && data.security_state !== lastSecurityState) {
+            const alertType = data.security_state === "LOCKED" ? "danger" : "warning";
+            logTelemetry(`[SECURITY STATE] Workstation state escalated to: ${data.security_state}`, alertType);
+            lastSecurityState = data.security_state;
+        }
+
+        logTelemetry(`Biometrics accepted. Score returned: ${data.trust_score}% | State: ${data.security_state || 'NORMAL'}`, "api");
         
         // Anti-spoofing logs for variance checks
         if (data.trust_score === 0 && totalCharacters >= 5) {
             const stdDwellVal = standardDeviation(dwellTimes);
             const stdFlightVal = standardDeviation(flightTimes);
             if (stdDwellVal < 2.0 || stdFlightVal < 2.0) {
-                logTelemetry(`[SECURITY CRITICAL] automated bot signature detected! Variance below threshold (Dwell SD: ${stdDwellVal.toFixed(2)}ms)`, "danger");
+                logTelemetry(`[SECURITY CRITICAL] Automated bot signature detected! Variance below threshold (Dwell SD: ${stdDwellVal.toFixed(2)}ms)`, "danger");
             }
+        }
+
+        // Trigger full-screen administrative lockout if state machine reached LOCKED
+        if (data.security_state === "LOCKED") {
+            lockWorkstation();
+            return;
         }
 
         updateDashboard(data.trust_score);
@@ -519,6 +540,7 @@ function resetSession() {
     // Reset counters
     totalCharacters = 0;
     clickCount = 0;
+    lastSecurityState = "NORMAL";
 
     // Reset timing
     keyDownTime = 0;
@@ -1206,3 +1228,97 @@ window.addEventListener("DOMContentLoaded", () => {
         logTelemetry("Workstation initialized. Zero-trust continuous monitoring offline. Click 'Start Session' to begin.", "system");
     }, 3000);
 });
+
+
+// ==========================================
+// Workstation Administrative Lockout Overlay
+// ==========================================
+function lockWorkstation() {
+    console.warn("🔒 WORKSTATION LOCKED!");
+
+    // Clear telemetry loops
+    if (uploadInterval) {
+        clearInterval(uploadInterval);
+        uploadInterval = null;
+    }
+    if (botInterval) {
+        clearInterval(botInterval);
+        botInterval = null;
+    }
+
+    // Lock workstation inputs
+    typingArea.value = "";
+    typingArea.disabled = true;
+    typingArea.placeholder = "🔴 WORKSTATION LOCKED - Biometrics Policy Violated";
+
+    // Disable threat simulator switches
+    if (simStopBtn) simStopBtn.disabled = true;
+    if (simBotBtn) simBotBtn.disabled = true;
+    if (simRandBtn) simRandBtn.disabled = true;
+
+    // Create and render full-screen blocker dynamic card
+    let lockOverlay = document.getElementById("securityLockOverlay");
+    if (!lockOverlay) {
+        lockOverlay = document.createElement("div");
+        lockOverlay.id = "securityLockOverlay";
+        lockOverlay.style.position = "fixed";
+        lockOverlay.style.top = "0";
+        lockOverlay.style.left = "0";
+        lockOverlay.style.width = "100vw";
+        lockOverlay.style.height = "100vh";
+        lockOverlay.style.backgroundColor = "rgba(8, 8, 12, 0.98)";
+        lockOverlay.style.backdropFilter = "blur(12px)";
+        lockOverlay.style.zIndex = "999999";
+        lockOverlay.style.display = "flex";
+        lockOverlay.style.flexDirection = "column";
+        lockOverlay.style.justifyContent = "center";
+        lockOverlay.style.alignItems = "center";
+        lockOverlay.style.color = "#ff0055";
+        lockOverlay.style.fontFamily = "'Outfit', sans-serif";
+        lockOverlay.style.textAlign = "center";
+
+        lockOverlay.innerHTML = `
+            <div style="padding: 50px; border: 2px solid #ff0055; border-radius: 16px; background: rgba(255, 0, 85, 0.04); box-shadow: 0 0 40px rgba(255, 0, 85, 0.2); max-width: 540px; transform: scale(0.95); animation: lockGlow 2s infinite alternate;">
+                <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="#ff0055" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 25px; filter: drop-shadow(0 0 8px rgba(255, 0, 85, 0.6));">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                </svg>
+                <h1 style="color: #ff0055; margin-bottom: 15px; font-size: 2.2rem; font-weight: 800; letter-spacing: 2px; text-transform: uppercase;">🔒 WORKSTATION LOCKED</h1>
+                <p style="color: #cbd5e1; margin-bottom: 35px; line-height: 1.6; font-size: 1.1rem; max-width: 440px; margin-left: auto; margin-right: auto;">
+                    Continuous identity authentication has suspended this terminal session due to consecutive keystroke anomalies or script bot spoofing signals.
+                </p>
+                <button id="lockResetBtn" style="padding: 14px 35px; font-size: 1.05rem; font-weight: 700; color: #ffffff; background: #ff0055; border: none; border-radius: 8px; cursor: pointer; text-transform: uppercase; letter-spacing: 1.5px; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 0 15px rgba(255, 0, 85, 0.3);">
+                    Unlock & Restart Session
+                </button>
+            </div>
+            <style>
+                @keyframes lockGlow {
+                    from { box-shadow: 0 0 20px rgba(255, 0, 85, 0.15); transform: scale(0.98); }
+                    to { box-shadow: 0 0 45px rgba(255, 0, 85, 0.35); transform: scale(1); }
+                }
+                #lockResetBtn:hover {
+                    background: #e1004b;
+                    box-shadow: 0 0 25px rgba(255, 0, 85, 0.6);
+                    transform: translateY(-2px);
+                }
+                #lockResetBtn:active {
+                    transform: translateY(1px);
+                }
+            </style>
+        `;
+        document.body.appendChild(lockOverlay);
+
+        // Wire reset handler to restore control
+        document.getElementById("lockResetBtn").addEventListener("click", function() {
+            lockOverlay.remove();
+            
+            // Re-enable inputs
+            if (simStopBtn) simStopBtn.disabled = false;
+            if (simBotBtn) simBotBtn.disabled = false;
+            if (simRandBtn) simRandBtn.disabled = false;
+
+            resetSession();
+            startSession();
+        });
+    }
+}

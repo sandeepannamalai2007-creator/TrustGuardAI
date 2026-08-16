@@ -20,10 +20,11 @@ from session_manager import (
     create_session,
     get_session,
     add_features,
-    set_exam_session_id
+    set_exam_session_id,
+    save_session
 )
 
-from trust_engine import calculate_trust_score
+from trust_engine import calculate_trust_score, update_security_state
 
 app = FastAPI(
     title="TrustGuard AI",
@@ -118,38 +119,52 @@ def receive_features(
         return FeatureResponse(
             status="error",
             message="Invalid Session ID",
-            trust_score=0
+            trust_score=0,
+            security_state="LOCKED"
+        )
+
+    # 1. Enforcement Check: If session is already locked, block all API telemetry updates
+    current_state = session.get("security_state", "NORMAL")
+    if current_state == "LOCKED":
+        return FeatureResponse(
+            status="locked",
+            message="Workstation Locked: Continuous security policy violations detected.",
+            trust_score=0.0,
+            security_state="LOCKED"
         )
 
     success = add_features(
         request.session_id,
         request.model_dump()
     )
+    
+    # Reload session from store to get the updated feature list
+    session = get_session(request.session_id)
 
-    # Look up the student who actually owns this session,
-    # instead of a hardcoded name
     student = crud.get_student(db, session["user_id"])
-
     print("Student:", student)
 
     similarity_score = 100.0
     has_typing_data = request.avg_dwell_time_ms > 0
+    explanations = []
 
     if student and has_typing_data:
         profile = crud.get_behavior_profile(db, student.id)
 
         if profile:
-            similarity_score = compare_with_profile(
+            similarity_score, explanations = compare_with_profile(
                 profile,
                 request.avg_dwell_time_ms,
                 request.avg_flight_time_ms,
                 request.typing_speed_cps,
                 request.avg_mouse_velocity_px_s
             )
+        else:
+            explanations = ["Profile training in progress - establishing baseline."]
 
         print("Similarity Score:", similarity_score)
 
-        # Calculate trust score first to determine if we should update profile
+        # Calculate trust score
         trust_score = calculate_trust_score(
             request.model_dump(),
             similarity_score
@@ -171,9 +186,14 @@ def receive_features(
             print(f"Skipping profile update: trust score {trust_score}% is below threshold.")
     else:
         trust_score = 100.0
+        if not has_typing_data:
+            explanations = ["Bypassed validation: No typing data collected during window."]
 
-    # Use the DB-backed exam session created at /session/start,
-    # instead of a hardcoded session_id=1 for every request
+    # 2. Update the Security State Machine
+    new_state = update_security_state(session, trust_score)
+    save_session(request.session_id, session)
+
+    # 3. Log to SQLite security audit trails
     crud.create_trust_log(
         db=db,
         session_id=session["exam_session_id"],
@@ -188,13 +208,16 @@ def receive_features(
         return FeatureResponse(
             status="error",
             message="Invalid Session ID",
-            trust_score=0
+            trust_score=0,
+            security_state=new_state
         )
 
     return FeatureResponse(
-        status="success",
-        message="Features received successfully",
-        trust_score=trust_score
+        status="locked" if new_state == "LOCKED" else "success",
+        message="Workstation Locked: Continuous security violations detected." if new_state == "LOCKED" else "Features received successfully",
+        trust_score=trust_score,
+        security_state=new_state,
+        explanations=explanations
     )
 
 

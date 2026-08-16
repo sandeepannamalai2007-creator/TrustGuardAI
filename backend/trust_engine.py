@@ -45,3 +45,56 @@ def calculate_trust_score(
     )
 
     return round(final_score, 2)
+
+
+def update_security_state(session: dict, trust_score: float) -> str:
+    """
+    Enforces security state transitions with hysteresis:
+    NORMAL -> SUSPICIOUS -> HIGH_RISK -> LOCKED
+
+    - 3 consecutive low trust scores (< 50) trigger escalation.
+    - 2 consecutive high trust scores (>= 50) trigger de-escalation.
+    - Bot detections (trust score == 0.0) trigger immediate LOCK.
+    - LOCKED state requires manual override/reset and cannot recover.
+    """
+    current_state = session.get("security_state", "NORMAL")
+    if current_state == "LOCKED":
+        return "LOCKED"
+
+    low_trust_count = session.get("low_trust_count", 0)
+    high_trust_count = session.get("high_trust_count", 0)
+
+    # Bot detection triggers immediate LOCK
+    if trust_score == 0.0:
+        session["security_state"] = "LOCKED"
+        session["low_trust_count"] = 0
+        session["high_trust_count"] = 0
+        return "LOCKED"
+
+    if trust_score < 50.0:
+        low_trust_count += 1
+        high_trust_count = 0
+        
+        if low_trust_count >= 3:
+            if current_state == "NORMAL":
+                current_state = "SUSPICIOUS"
+            elif current_state == "SUSPICIOUS":
+                current_state = "HIGH_RISK"
+            elif current_state == "HIGH_RISK":
+                current_state = "LOCKED"
+            low_trust_count = 0
+    else:
+        high_trust_count += 1
+        low_trust_count = 0
+        
+        if high_trust_count >= 2:
+            if current_state == "HIGH_RISK":
+                current_state = "SUSPICIOUS"
+            elif current_state == "SUSPICIOUS":
+                current_state = "NORMAL"
+            high_trust_count = 0
+
+    session["security_state"] = current_state
+    session["low_trust_count"] = low_trust_count
+    session["high_trust_count"] = high_trust_count
+    return current_state

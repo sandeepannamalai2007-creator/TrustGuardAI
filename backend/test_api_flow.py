@@ -1,14 +1,13 @@
 import json
 import urllib.request
 import urllib.error
+import pytest
 
-def test_flow():
-    print("=" * 60)
-    print("TrustGuard AI API Flow Test")
-    print("=" * 60)
+API_URL = "http://127.0.0.1:8000"
 
+def test_api_session_flow():
     # 1. Start Session
-    start_url = "http://127.0.0.1:8000/session/start"
+    start_url = f"{API_URL}/session/start"
     start_data = json.dumps({
         "user_id": "TestStudent",
         "demo_mode": True
@@ -17,18 +16,15 @@ def test_flow():
     headers = {"Content-Type": "application/json"}
     
     req = urllib.request.Request(start_url, data=start_data, headers=headers, method="POST")
-    try:
-        with urllib.request.urlopen(req) as response:
-            res_body = response.read().decode("utf-8")
-            data = json.loads(res_body)
-            session_id = data["session_id"]
-            print(f"[SUCCESS] Start Session: session_id={session_id}")
-    except urllib.error.URLError as e:
-        print(f"[ERROR] Failed to connect to server: {e}")
-        return False
+    with urllib.request.urlopen(req) as response:
+        assert response.status == 200
+        res_body = response.read().decode("utf-8")
+        data = json.loads(res_body)
+        assert "session_id" in data
+        session_id = data["session_id"]
 
     # 2. Send features (typing data)
-    feature_url = "http://127.0.0.1:8000/session/features"
+    feature_url = f"{API_URL}/session/features"
     feature_data = json.dumps({
         "session_id": session_id,
         "avg_dwell_time_ms": 120.0,
@@ -43,14 +39,12 @@ def test_flow():
     }).encode("utf-8")
 
     req_feat = urllib.request.Request(feature_url, data=feature_data, headers=headers, method="POST")
-    try:
-        with urllib.request.urlopen(req_feat) as response:
-            res_body = response.read().decode("utf-8")
-            data = json.loads(res_body)
-            print(f"[SUCCESS] Send Features: trust_score={data['trust_score']}% ({data['message']})")
-    except urllib.error.URLError as e:
-        print(f"[ERROR] Failed to send features: {e}")
-        return False
+    with urllib.request.urlopen(req_feat) as response:
+        assert response.status == 200
+        res_body = response.read().decode("utf-8")
+        data = json.loads(res_body)
+        assert data["trust_score"] > 0
+        assert data["status"] == "success"
 
     # 3. Send features (No typing data - testing default 100% bypass)
     feature_data_no_type = json.dumps({
@@ -67,14 +61,11 @@ def test_flow():
     }).encode("utf-8")
 
     req_feat_no = urllib.request.Request(feature_url, data=feature_data_no_type, headers=headers, method="POST")
-    try:
-        with urllib.request.urlopen(req_feat_no) as response:
-            res_body = response.read().decode("utf-8")
-            data = json.loads(res_body)
-            print(f"[SUCCESS] Send Features (No Typing): trust_score={data['trust_score']}% (Bypass works: {data['trust_score'] == 100.0})")
-    except urllib.error.URLError as e:
-        print(f"[ERROR] Failed to send empty features: {e}")
-        return False
+    with urllib.request.urlopen(req_feat_no) as response:
+        assert response.status == 200
+        res_body = response.read().decode("utf-8")
+        data = json.loads(res_body)
+        assert data["trust_score"] == 100.0
 
     # 4. Send features (Script Bot spoofing timing variance check)
     feature_data_bot = json.dumps({
@@ -91,19 +82,8 @@ def test_flow():
     }).encode("utf-8")
 
     req_feat_bot = urllib.request.Request(feature_url, data=feature_data_bot, headers=headers, method="POST")
-    try:
-        with urllib.request.urlopen(req_feat_bot) as response:
-            res_body = response.read().decode("utf-8")
-            data = json.loads(res_body)
-            print(f"[SUCCESS] Send Features (Script Bot): trust_score={data['trust_score']}% (Bot Blocked works: {data['trust_score'] == 0.0})")
-    except urllib.error.URLError as e:
-        print(f"[ERROR] Failed to send bot features: {e}")
-        return False
-
-    print("=" * 60)
-    print("API Flow Test Completed Successfully")
-    print("=" * 60)
-    return True
-
-if __name__ == "__main__":
-    test_flow()
+    with urllib.request.urlopen(req_feat_bot) as response:
+        assert response.status == 200
+        res_body = response.read().decode("utf-8")
+        data = json.loads(res_body)
+        assert data["trust_score"] == 0.0
