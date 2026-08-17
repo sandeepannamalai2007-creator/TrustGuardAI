@@ -185,14 +185,14 @@ def receive_features(
     logger.debug("receive_features() called")
     session = get_session(request.session_id)
     if not session:
-        return FeatureResponse(status="error", message="Invalid Session ID", trust_score=0, security_state="LOCKED")
+        raise HTTPException(status_code=404, detail="Invalid Session ID")
 
     current_state = session.get("security_state", "NORMAL")
     if current_state == "LOCKED":
         return FeatureResponse(status="locked", message="Workstation Locked: Continuous security policy violations detected.", trust_score=0.0, security_state="LOCKED")
 
     if not add_features(request.session_id, request.model_dump()):
-        return FeatureResponse(status="error", message="Invalid Session ID", trust_score=0, security_state=current_state)
+        raise HTTPException(status_code=404, detail="Invalid Session ID")
 
     session = get_session(request.session_id)
     student = crud.get_student(db, session["user_id"])

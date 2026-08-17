@@ -87,6 +87,15 @@ TrustGuardAI/
 
 ---
 
+## 📚 Documentation
+
+- [API Documentation](docs/API_DOCUMENTATION.md)
+- [Privacy & Data Handling](docs/PRIVACY_AND_DATA_HANDLING.md)
+- [Security Policies](SECURITY.md)
+- **Interactive API Docs**: Available via FastAPI Swagger UI at `http://127.0.0.1:8000/docs` when the server is running.
+
+---
+
 ## 🚀 Getting Started
 
 ### 1. Prerequisites

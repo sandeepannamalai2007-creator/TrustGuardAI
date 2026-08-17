@@ -6,6 +6,14 @@ import logging
 logger = logging.getLogger(__name__)
 
 # ======================================
+# Constants
+# ======================================
+
+DECISION_SCORE_MIN = -0.20
+DECISION_SCORE_MAX = 0.20
+DECISION_SCORE_SCALE = 0.40
+
+# ======================================
 # Load Trained Model
 # ======================================
 
@@ -64,10 +72,10 @@ def predict_trust_score(features):
     # --------------------------------------
 
     # Clamp score to a reasonable range
-    decision_score = max(-0.20, min(0.20, decision_score))
+    decision_score = max(DECISION_SCORE_MIN, min(DECISION_SCORE_MAX, decision_score))
 
     # Scale to 0-100
-    trust_score = ((decision_score + 0.20) / 0.40) * 100
+    trust_score = ((decision_score - DECISION_SCORE_MIN) / DECISION_SCORE_SCALE) * 100
 
     trust_score = int(round(trust_score))
 

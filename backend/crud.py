@@ -72,7 +72,10 @@ def create_behavior_profile(
     return profile
 
 
-def cap_change(current_val: float, new_val: float, max_pct: float = 0.10) -> float:
+DEFAULT_MAX_DRIFT_PCT = 0.10
+
+
+def cap_change(current_val: float, new_val: float, max_pct: float = DEFAULT_MAX_DRIFT_PCT) -> float:
     """
     Limits the adjustment of any baseline parameter to at most max_pct (default 10%)
     of its current baseline value to prevent sudden poisoning shifts.

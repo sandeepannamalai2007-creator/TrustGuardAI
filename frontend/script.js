@@ -56,6 +56,22 @@ let uploadInterval = null;
 let reconnectTimeout = null;
 let backendOnline = null; // null = unknown, true/false once we know
 
+// ==========================================
+// Helper function for timeout fetches
+// ==========================================
+async function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        const response = await fetch(url, { ...options, signal: controller.signal });
+        clearTimeout(id);
+        return response;
+    } catch (error) {
+        clearTimeout(id);
+        throw error;
+    }
+}
+
 // -------------------------
 // Variables
 // -------------------------
@@ -149,16 +165,16 @@ function setBackendStatus(online, message) {
 // ==========================================
 async function startSession() {
     try {
-        const response = await fetch(API_URL + "/session/start", {
+        const response = await fetchWithTimeout(API_URL + "/session/start", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json"
             },
             body: JSON.stringify({
-                user_id: document.getElementById('typingArea')?.dataset?.userId || "DemoUser",
+                user_id: document.getElementById("userIdInput")?.value || "Student_01",
                 demo_mode: true
             })
-        });
+        }, 10000);
 
         if (!response.ok) {
             throw new Error("Server responded with " + response.status);
@@ -376,13 +392,13 @@ async function sendFeatures() {
     logTelemetry("Uploading behavioral biometrics payload...", "api");
 
     try {
-        const response = await fetch(`${API_URL}/session/features`, {
+        const response = await fetchWithTimeout(`${API_URL}/session/features`, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json"
             },
             body: JSON.stringify(featureVector)
-        });
+        }, 10000);
 
         if (!response.ok) {
             throw new Error("Server responded with " + response.status);
@@ -450,6 +466,10 @@ function updateDashboard(score) {
 
     // Update circular gauge score
     trustScoreDisplay.textContent = score + "%";
+    const gaugeContainer = document.querySelector(".gauge-container");
+    if (gaugeContainer) {
+        gaugeContainer.setAttribute("aria-valuenow", score);
+    }
 
     // Update circular progress line
     if (gaugeProgress) {
@@ -583,6 +603,10 @@ function resetSession() {
     featureSessionTimeDisplay.textContent = "0 s";
 
     trustScoreDisplay.textContent = "100%";
+    const resetGaugeContainer = document.querySelector(".gauge-container");
+    if (resetGaugeContainer) {
+        resetGaugeContainer.setAttribute("aria-valuenow", 100);
+    }
     if (gaugeProgress) {
         gaugeProgress.style.strokeDashoffset = "0";
     }
@@ -986,12 +1010,12 @@ let unlockedPin = null;
 async function fetchAuditLogs(pin) {
     ledgerErrorMsg.textContent = "";
     try {
-        const response = await fetch(`${API_URL}/session/history`, {
+        const response = await fetchWithTimeout(`${API_URL}/session/history`, {
             method: "GET",
             headers: {
                 "X-Admin-PIN": pin
             }
-        });
+        }, 10000);
         
         if (response.status === 403) {
             throw new Error("Invalid Security PIN");

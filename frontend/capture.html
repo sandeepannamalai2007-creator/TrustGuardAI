@@ -59,6 +59,7 @@
         </div>
         
         <div class="session-badge-container">
+            <input type="text" id="userIdInput" class="form-select" value="Student_01" placeholder="Enter Student ID..." style="margin-right: 15px; width: auto; display: inline-block;">
             <span id="sessionStatusBadge" class="session-badge" style="background: rgba(255,255,255,0.02); border-color: rgba(255,255,255,0.1); color: var(--text-muted); box-shadow: none;">⚪ INACTIVE</span>
         </div>
     </header>
@@ -90,19 +91,19 @@
         <!-- Controller Panel -->
         <div class="control-panel">
             <div class="primary-actions">
-                <button id="startBtn" class="btn btn-primary">
+                <button id="startBtn" class="btn btn-primary" aria-label="Start Session">
                     <span class="btn-icon">▶</span> Start Session
                 </button>
-                <button id="endBtn" class="btn btn-danger" disabled>
+                <button id="endBtn" class="btn btn-danger" disabled aria-label="End Session">
                     <span class="btn-icon">■</span> End Session
                 </button>
             </div>
             
             <div class="secondary-actions">
-                <button id="resetBtn" class="btn btn-secondary">
+                <button id="resetBtn" class="btn btn-secondary" aria-label="Reset Metrics">
                     🔄 Reset Metrics
                 </button>
-                <button id="exportBtn" class="btn btn-secondary">
+                <button id="exportBtn" class="btn btn-secondary" aria-label="Export JSON">
                     📥 Export JSON
                 </button>
             </div>
@@ -116,7 +117,7 @@
             </div>
             <div class="policy-settings">
                 <label for="policySelect" class="policy-label">Sensitivity Tier</label>
-                <select id="policySelect" class="form-select">
+                <select id="policySelect" class="form-select" aria-label="Sensitivity Tier">
                     <option value="balanced" selected>Balanced Mode (Threshold: 50%)</option>
                     <option value="strict">Strict Mode (Threshold: 75%)</option>
                     <option value="relaxed">Relaxed Mode (Threshold: 30%)</option>
@@ -145,13 +146,13 @@
             </div>
             <p class="description">Select attack simulation payload to verify Intrusion Detection System (IDS) alerts.</p>
                 <div class="simulator-buttons">
-                    <button id="simStopBtn" class="btn btn-simulator sim-btn-active">
+                    <button id="simStopBtn" class="btn btn-simulator sim-btn-active" aria-label="Human Mode">
                         🟢 Human
                     </button>
-                    <button id="simBotBtn" class="btn btn-simulator">
+                    <button id="simBotBtn" class="btn btn-simulator" aria-label="Script Bot Mode">
                         🤖 Script Bot
                     </button>
-                    <button id="simRandBtn" class="btn btn-simulator">
+                    <button id="simRandBtn" class="btn btn-simulator" aria-label="Erratic Attacker Mode">
                         ⚠️ Erratic Attacker
                     </button>
                 </div>
@@ -164,7 +165,7 @@
             
             <!-- Trust Gauge Card -->
             <div class="card glass trust-gauge-card">
-                <div class="gauge-container genuine-gauge">
+                <div id="trustGaugeContainer" class="gauge-container genuine-gauge" role="progressbar" aria-valuenow="100" aria-valuemin="0" aria-valuemax="100" aria-label="Identity Trust Score">
                     <svg class="gauge-svg" viewBox="0 0 100 100">
                         <circle class="gauge-track" cx="50" cy="50" r="42" />
                         <circle id="gaugeProgress" class="gauge-progress-bar" cx="50" cy="50" r="42" stroke-dasharray="263.89" stroke-dashoffset="0" />
@@ -213,8 +214,9 @@
                 <span class="lock-icon">🔒</span>
                 <p>This ledger accesses raw database tables containing sensitive biometric identity trust records.</p>
                 <div class="pin-entry-group">
-                    <input type="password" id="adminPinInput" placeholder="Enter Admin PIN..." maxlength="8">
-                    <button id="unlockLedgerBtn" class="btn btn-primary">Authorize & Unlock</button>
+                    <label for="adminPinInput" class="visually-hidden">Admin Security PIN</label>
+                    <input type="password" id="adminPinInput" placeholder="Enter Admin PIN..." maxlength="8" aria-label="Admin Security PIN">
+                    <button id="unlockLedgerBtn" class="btn btn-primary" aria-label="Unlock Ledger">Authorize & Unlock</button>
                 </div>
                 <p id="ledgerErrorMsg" class="error-msg"></p>
             </div>
