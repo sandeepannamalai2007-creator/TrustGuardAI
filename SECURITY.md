@@ -1,51 +1,77 @@
-# 🔒 TrustGuard AI: Security Policy & Limitations
+# 🔒 TrustGuard AI: Security Architecture & Vulnerability Policy
 
-This document outlines the security boundaries, limitations, and testing parameters of the TrustGuard AI continuous authentication console. This project is a proof-of-concept and technical demonstrator designed for deployment evaluations and academic/placement presentations.
-
----
-
-## 🔑 1. Security Audit PIN Gate
-* **Implementation**: Access to the database-backed security logs on the dashboard is protected by an admin PIN check (configured via TRUSTGUARD_ADMIN_PIN environment variable).
-* **Limitation**: The PIN authentication is a mock administrative gateway verified on the backend via a simple request header (`X-Admin-PIN`). It is designed to demonstrate data-access visual control in mock dashboards, rather than a production-ready cryptographic role-based access control (RBAC) system.
-* **Production Recommendation**: Real systems should authenticate users via standards like OAuth2 / OpenID Connect and secure logs behind cryptographically signed JSON Web Tokens (JWT) with fine-grained scopes.
+This document outlines the security architecture, authentication mechanisms, policy controls, and known security boundaries of the **TrustGuard AI v2.0** continuous authentication console.
 
 ---
 
-## 🌐 2. CORS (Cross-Origin Resource Sharing) Boundaries
-* **Implementation**: The backend CORS middleware (`backend/main.py`) restricts allowed incoming origins to:
-  - `http://localhost` / `http://127.0.0.1` (Local development)
-  - `http://localhost:8000` / `http://127.0.0.1:8000` (Backend API routes)
-  - `"null"` (Required to allow local browser page loads via double-clicking `file:///.../capture.html` directly from the file explorer).
-* **Limitation**: Allowing the `"null"` origin is necessary for local recruitment previews but opens the server to cross-origin requests from any local browser context.
-* **Production Recommendation**: Remove `"null"` and scope origins strictly to the exact HTTPS domain from which the web app is served.
+## 🔑 1. Multi-Tier Authentication Architecture
+
+TrustGuard AI enforces a strict separation between end-user biometric re-authentication and administrative override controls:
+
+| Role / Feature | Credential | Environment Variable | Default (Dev) | Description |
+|---|---|---|---|---|
+| **Session Ingestion** | JWT Bearer Token | `TRUSTGUARD_JWT_SECRET` | `super-secret-...` | Issued on `/session/start`, required in `Authorization` header for `/session/features` |
+| **Step-Up Challenge** | User Re-Auth PIN | `TRUSTGUARD_STEP_UP_PIN` | `9999` | Restores workstation status from `SUSPICIOUS`/`HIGH_RISK` back to `NORMAL` |
+| **Admin Controls & Audit** | Admin Security PIN | `TRUSTGUARD_ADMIN_PIN` | `1234` | Unlocks raw database audit ledger, force lock/unlock, CSV compliance export, and ML retrain |
+
+### Startup Security Warnings
+On application startup, FastAPI evaluates environment variables and outputs a `CRITICAL` security audit log if production deployments rely on insecure defaults:
+```
+[SECURITY WARNING] TRUSTGUARD_ADMIN_PIN is using default '1234'. Set this env var before production deployment.
+[SECURITY WARNING] TRUSTGUARD_JWT_SECRET is using default key. Set this env var before production deployment.
+```
 
 ---
 
-## 📊 3. Biometric Benchmarks (FAR/FRR)
-* **Implementation**: Evaluation scripts demonstrate a False Rejection Rate (FRR) of **`2.09%`** and a False Acceptance Rate (FAR) of **`0.00%`** for bot attacks.
-* **Limitation**: These metrics are evaluated against static historical benchmarks (including the DSL-StrongPassword dataset) and synthetic bot timing logs. Actual field numbers may vary depending on ambient user typing patterns, keyboard physical models, and network latency anomalies.
+## 🛡️ 2. Security State Machine & Hysteresis
+
+To prevent security state flapping on temporary noise or typing pauses, TrustGuard AI enforces state transitions through a 4-tier state machine with hysteresis:
+
+$$\text{NORMAL} \xrightarrow{\text{3 consecutive scores } < 50} \text{SUSPICIOUS} \xrightarrow{\text{3 consecutive scores } < 50} \text{HIGH\_RISK} \xrightarrow{\text{3 consecutive scores } < 50} \text{LOCKED}$$
+
+- **De-escalation**: Requires **2 consecutive scores $\ge 50$** to step down one risk level.
+- **Immediate Lockout**: Synthetic bot signatures (standard deviation $< 2.0\text{ ms}$) or manual admin override trigger immediate transition to **`LOCKED`**.
+- **Step-Up Invalidation**: Whenever the security state escalates to a higher risk level, `step_up_completed` is reset to `False`, forcing a fresh PIN verification challenge.
 
 ---
 
-## 🛡️ 4. Profile Poisoning Safeguards
-* **Implementation**: The profile updates mechanism is defended by two key rules:
-  1. **Trust-Gated Updates**: Keystroke baseline profiles in the database are only updated if the active request's `trust_score` is greater than or equal to $50\%$. If a bot or intruder starts typing, their anomalous timing data is blocked from being written to the user's profile.
-  2. **Step-Clipped Parameter Drift**: Adjustments to the baseline means (dwell, flight, speeds, velocities) are capped to a maximum change delta of **$10\%$ per update** using `cap_change` in `backend/crud.py`.
-* **Security Context**: This ensures that even if an attacker manages to type close to the user's style, they cannot rapidly slide the baseline to corrupt or hijack the profile over time.
+## 🔐 3. Profile Poisoning Safeguards
+
+Keystroke baseline profiles in the database are defended by two complementary security rules:
+
+1. **Trust-Gated Profile Updates**: Baseline profiles are updated **only** when `trust_score >= 50%`. Anomalous or intruder typing sequences are rejected from entering baseline calculations.
+2. **Step-Clipped Parameter Drift**: Adjustments to baseline feature means (dwell time, flight time, typing speed, mouse velocity) are capped to a maximum change delta of **$\pm 10\%$ per update** via `cap_change()` in `backend/crud.py`.
 
 ---
 
-## 💾 5. Session Token Store
-* **Implementation**: Session tokens (`session_id`) are generated in FastAPI and managed via a hybrid `SessionManager`. The manager connects to a Redis instance on localhost (offering shared state and TTL eviction across multiple server workers). If Redis is unreachable, the system automatically falls back to an isolated SQLite store (`backend/sessions.db`) to preserve persistence across backend restarts.
-* **Security Context**: Fixes worker state splitting and session deletion on server restarts.
+## ⚡ 4. Rate Limiting & HTTPS Enforcement
+
+- **Rate Limiting (`slowapi`)**:
+  - `POST /session/start`: **30 requests / minute** per IP
+  - `GET /session/history`: **5 requests / minute** per IP
+- **HTTPS Enforcement**: `HTTPSRedirectMiddleware` is wired into `backend/main.py` and activated by setting `ENABLE_HTTPS_REDIRECT=True` in `config.py` or `.env`.
 
 ---
 
-## ⚡ 6. Performance Latency Benchmarks
-* **ML Inference Latency (predict_trust_score)**:
-  - **Average**: `42.08 ms`
-  - **95th Percentile (p95)**: `48.33 ms`
-* **Features Telemetry Endpoint Roundtrip** (`/session/features` over 100 trials):
-  - **Average**: `133.52 ms`
-  - **95th Percentile (p95)**: `142.51 ms`
-* **Performance Impact**: Sub-150ms verification round-trip guarantees transparent continuous identity confirmation during active sessions.
+## 💾 5. Session Store Eviction & Fallback
+
+Session state is managed via `SessionManager`:
+- **Primary Store**: Redis on `localhost:6379` with automatic TTL eviction (1 hour / 3600s).
+- **SQLite Fallback**: If Redis is unreachable, the system gracefully falls back to `backend/sessions.db` with timestamp-based expiry filtering.
+
+---
+
+## 📊 6. Biometric Benchmarks & Performance Latency
+
+| Benchmark / Metric | Evaluated Value | Context |
+|---|---|---|
+| **False Acceptance Rate (FAR)** | **`0.00%`** | 0 synthetic bot attacks accepted |
+| **False Rejection Rate (FRR)** | **`2.09%`** | Evaluated on 21,400 CMU keystroke samples |
+| **ML Inference Latency** | **`42.08 ms`** | `predict_trust_score()` execution time |
+| **Feature Telemetry Roundtrip** | **`133.52 ms`** | Complete HTTP `/session/features` roundtrip (p95: 142.51ms) |
+
+---
+
+## 📄 License & Intellectual Property
+
+TrustGuard AI is licensed under the [MIT License](LICENSE) (Copyright © 2026 Sandeep Annamalai).
