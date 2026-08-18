@@ -14,7 +14,6 @@ Or triggered via the /admin/retrain API endpoint.
 
 import json
 import logging
-import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path

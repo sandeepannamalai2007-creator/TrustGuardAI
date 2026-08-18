@@ -1,10 +1,10 @@
+import logging
 import os
+
 import joblib
 import numpy as np
+from preprocess import engineer_features, load_dataset
 from sklearn.ensemble import IsolationForest
-import logging
-
-from preprocess import load_dataset, engineer_features
 
 logger = logging.getLogger(__name__)
 

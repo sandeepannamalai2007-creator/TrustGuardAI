@@ -56,24 +56,39 @@ graph TD
 
 ## 📊 Model Performance & Biometric Evaluation
 
-TrustGuard AI enforces a **Subject-Disjoint Multi-Subject Evaluation Protocol** across all 51 subjects in the CMU Keystroke Dynamics Benchmark Dataset (20,400 total test trials), separated from automated evasion bot stress testing:
+TrustGuard AI evaluates machine learning performance using a **Session-Disjoint Genuine Testing + Cross-Subject Impostor Evaluation** protocol across all 51 subjects in the CMU Keystroke Dynamics Benchmark Dataset (20,400 total test trials), strictly separated from automated evasion bot stress testing:
 
-### 1. 🛡️ Adversarial Stress Testing (Bot Evasion)
-| Attack Vector | Sample Count | FAR (Allowed) | Defense Rate (Blocked) | Status |
-|---|---|---|---|---|
-| **Zero-Variance Script Bot** (`std_dwell=0.0ms`) | 500 | **0.00%** | **100.00%** | ✅ **Blocked (IDS Signature)** |
-| **Erratic Random Attacker** | 500 | **0.00%** | **100.00%** | ✅ **Blocked (Entropy Anomaly)** |
+### 1. 🧬 Session-Disjoint Genuine Testing + Cross-Subject Impostor Evaluation
+```
+Evaluation Metrics (CMU Keystroke Dynamics Benchmark)
+──────────────────────────────────────────────────────────────────────────
+Subjects Evaluated           : 51
+Genuine Test Samples         : 10,200 (Sessions 26-50, Unseen)
+Impostor Test Samples        : 10,200 (Cross-Subject)
 
-### 2. 🧬 Subject-Disjoint Biometric Cross-Evaluation (51 Subjects, 20,400 Trials)
-| Metric | Evaluated Score | Context / Description |
-| :--- | :---: | :--- |
-| **Equal Error Rate (EER)** | **`40.08%`** | Threshold where $FAR = FRR$ at operating threshold $T = 60.5\%$. |
-| **ROC Area Under Curve (AUC)** | **`0.6330`** | Overall discrimination power across all decision boundaries. |
-| **False Rejection Rate (FRR)** | **`17.32%`** | Rate of genuine users flagged at default threshold $T = 50.0\%$. |
-| **False Acceptance Rate (FAR)** | **`72.81%`** | Cross-subject human impostors allowed on short 10-key vectors ($T = 50.0\%$). |
-| **F1-Score / Precision / Recall** | **`0.6472`** / **`0.5317`** / **`0.8268`** | Harmonic performance metric across 20,400 subject-disjoint test trials. |
+Equal Error Rate (EER)       : 40.08% (at Operating Threshold T = 60.5%)
+ROC Area Under Curve (AUC)   : 0.6330
+At Default Operating Threshold T = 50.0%:
+  - False Acceptance Rate (FAR) : 72.81%
+  - False Rejection Rate (FRR)  : 17.32%
+  - Precision                   : 0.5317
+  - Recall                      : 0.8268
+  - F1-Score                    : 0.6472
+  - Confusion Matrix            : TP = 8,433 | TN = 2,773 | FP = 7,427 | FN = 1,767
+──────────────────────────────────────────────────────────────────────────
+```
 
-> Detailed evaluation methodologies, confusion matrices, and ROC curve curves are documented in [`docs/EVALUATION_METRICS.md`](docs/EVALUATION_METRICS.md).
+### 2. 🛡️ Adversarial Stress Testing (Bot Evasion)
+```
+Adversarial Stress Testing
+──────────────────────────────────────────────────────────────────────────
+Script Bot Evasion FAR       : 0.00% (100.00% Blocked via Entropy IDS)
+Erratic Attacker Evasion FAR  : 0.00% (100.00% Blocked via Anomaly Check)
+──────────────────────────────────────────────────────────────────────────
+```
+
+> Detailed methodologies, mathematical derivations, and limitation analyses are documented in [`docs/ML_EVALUATION.md`](docs/ML_EVALUATION.md). Generated evaluation plots are stored in [`ml/evaluation_results/`](ml/evaluation_results/).
+
 
 
 ---

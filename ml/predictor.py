@@ -1,110 +1,102 @@
+import logging
 import os
+
 import joblib
 import numpy as np
-import logging
 
 logger = logging.getLogger(__name__)
 
-# ======================================
-# Constants
-# ======================================
+# Base path for models
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MODEL_PATH = os.path.join(BASE_DIR, "model.pkl")
+SCALER_PATH = os.path.join(BASE_DIR, "scaler.pkl")
 
-DECISION_SCORE_MIN = -0.20
-DECISION_SCORE_MAX = 0.20
-DECISION_SCORE_SCALE = 0.40
-
-# ======================================
-# Load Trained Model
-# ======================================
-
-MODEL_PATH = os.path.join(
-    os.path.dirname(__file__),
-    "saved_model",
-    "trust_model.pkl"
-)
-
-model = joblib.load(MODEL_PATH)
+# Load model and scaler lazily or at module load time
+model = None
+scaler = None
 
 try:
-    logger.info("✅ TrustGuard AI model loaded successfully.")
-except UnicodeEncodeError:
-    logger.info("[SUCCESS] TrustGuard AI model loaded successfully.")
+    if os.path.exists(MODEL_PATH) and os.path.exists(SCALER_PATH):
+        model = joblib.load(MODEL_PATH)
+        scaler = joblib.load(SCALER_PATH)
+        logger.info("✅ TrustGuard AI model loaded successfully.")
+    else:
+        logger.warning("⚠️ Model or Scaler file not found. Fallback mode active.")
+except (OSError, FileNotFoundError, ValueError) as e:
+    logger.error(f"❌ Failed to load ML model: {e}")
+
+DECISION_SCORE_MIN = -0.3
+DECISION_SCORE_MAX = 0.3
+DECISION_SCORE_SCALE = DECISION_SCORE_MAX - DECISION_SCORE_MIN
 
 
-def reload_model() -> None:
+def predict_trust_score(features: dict) -> int:
     """
-    Hot-swap the Isolation Forest model from disk without restarting the server.
-    Called after a successful /admin/retrain to pick up the new artifact.
+    Predicts a trust score (0-100) based on extracted telemetry features.
+    If the model is not loaded, uses a fallback heuristic based on feature thresholds.
     """
-    global model
-    model = joblib.load(MODEL_PATH)
-    logger.info("[PREDICTOR] Model hot-reloaded from disk after retraining.")
+    if model is None or scaler is None:
+        # Fallback heuristic calculation if model loading failed
+        return _fallback_trust_score(features)
+
+    try:
+        # Extract features in exact order used during training:
+        # ["avg_dwell_time_ms", "std_dwell_time_ms", "avg_flight_time_ms", "std_flight_time_ms", "typing_speed_cps"]
+        input_data = np.array([[
+            features.get("avg_dwell_time_ms", 0.0),
+            features.get("std_dwell_time_ms", 0.0),
+            features.get("avg_flight_time_ms", 0.0),
+            features.get("std_flight_time_ms", 0.0),
+            features.get("typing_speed_cps", 0.0)
+        ]])
+
+        # Scale features
+        scaled_data = scaler.transform(input_data)
+
+        # Get raw decision score from Isolation Forest (higher = more normal, lower = anomalous)
+        raw_score = model.decision_function(scaled_data)[0]
+
+        # Convert decision score to 0-100 trust score
+        trust_score = _decision_score_to_trust_score(raw_score)
+        return trust_score
+
+    except (ValueError, KeyError, AttributeError) as e:
+        logger.error(f"Error predicting trust score: {e}")
+        return _fallback_trust_score(features)
 
 
-
-
-def predict_trust_score(features):
+def _decision_score_to_trust_score(decision_score: float) -> int:
     """
-    Predict a continuous trust score (0-100)
-    using the real CMU-trained Isolation Forest model.
+    Converts raw Isolation Forest decision_function score (-0.3 to +0.3)
+    into a human-readable Trust Score (0 to 100).
     """
-
-    # --------------------------------------
-    # Validate required features
-    # --------------------------------------
-
-    required = [
-        "avg_dwell_time_ms",
-        "avg_flight_time_ms",
-        "typing_speed_cps"
-    ]
-
-    for key in required:
-        if key not in features:
-            raise ValueError(f"Missing feature: {key}")
-
-    # --------------------------------------
-    # Prepare feature vector
-    # --------------------------------------
-
-    sample = np.array([[
-        float(features["avg_dwell_time_ms"]),
-        float(features["avg_flight_time_ms"]),
-        float(features["typing_speed_cps"])
-    ]])
-
-    # --------------------------------------
-    # Predict
-    # --------------------------------------
-
-    decision_score = model.decision_function(sample)[0]
-
-    # --------------------------------------
-    # Convert decision score to trust score
-    # --------------------------------------
-
-    # Clamp score to a reasonable range
     decision_score = max(DECISION_SCORE_MIN, min(DECISION_SCORE_MAX, decision_score))
+    raw_trust = ((decision_score - DECISION_SCORE_MIN) / DECISION_SCORE_SCALE) * 100.0
+    trust_score_int = round(raw_trust)
+    return max(0, min(100, trust_score_int))
 
-    # Scale to 0-100
-    trust_score = ((decision_score - DECISION_SCORE_MIN) / DECISION_SCORE_SCALE) * 100
 
-    trust_score = int(round(trust_score))
+def _fallback_trust_score(features: dict) -> int:
+    """
+    Rule-based fallback calculation if ML model fails to load.
+    """
+    dwell = features.get("avg_dwell_time_ms", 100.0)
+    std_dwell = features.get("std_dwell_time_ms", 10.0)
+    flight = features.get("avg_flight_time_ms", 150.0)
+    std_flight = features.get("std_flight_time_ms", 15.0)
 
-    # Keep inside limits
-    trust_score = max(0, min(100, trust_score))
+    score = 100.0
 
-    # --------------------------------------
-    # Debug Output
-    # --------------------------------------
+    # Penalize bot-like zero-variance behavior
+    if std_dwell <= 0.0 and std_flight <= 0.0:
+        score -= 80.0
 
-    logger.debug("\n================ Prediction ================")
-    logger.debug(f"Dwell Time   : {sample[0][0]:.2f} ms")
-    logger.debug(f"Flight Time  : {sample[0][1]:.2f} ms")
-    logger.debug(f"Typing Speed : {sample[0][2]:.2f} cps")
-    logger.debug("--------------------------------------------")
-    logger.debug(f"Decision Score : {decision_score:.5f}")
-    logger.debug(f"Trust Score    : {trust_score}")
-    logger.debug("============================================\n")
+    # Penalize extreme dwell times
+    if dwell < 40.0 or dwell > 400.0:
+        score -= 30.0
 
-    return trust_score
+    # Penalize extreme flight times
+    if flight < 10.0 or flight > 800.0:
+        score -= 30.0
+
+    return max(0, min(100, round(score)))
