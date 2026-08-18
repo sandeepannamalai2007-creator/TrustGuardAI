@@ -31,6 +31,18 @@ except UnicodeEncodeError:
     logger.info("[SUCCESS] TrustGuard AI model loaded successfully.")
 
 
+def reload_model() -> None:
+    """
+    Hot-swap the Isolation Forest model from disk without restarting the server.
+    Called after a successful /admin/retrain to pick up the new artifact.
+    """
+    global model
+    model = joblib.load(MODEL_PATH)
+    logger.info("[PREDICTOR] Model hot-reloaded from disk after retraining.")
+
+
+
+
 def predict_trust_score(features):
     """
     Predict a continuous trust score (0-100)

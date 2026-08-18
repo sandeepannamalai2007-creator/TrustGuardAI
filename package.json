@@ -1,0 +1,9 @@
+{
+  "name": "trustguard-ai",
+  "version": "2.0.0",
+  "description": "Continuous Biometric Authentication Console",
+  "type": "module",
+  "scripts": {
+    "test": "node --test frontend/test_modules.test.js"
+  }
+}

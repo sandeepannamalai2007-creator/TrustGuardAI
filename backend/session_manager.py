@@ -3,7 +3,7 @@ import json
 import os
 import sqlite3
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,7 @@ def create_session(user_id: str, demo_mode: bool):
         "session_id": session_id,
         "user_id": user_id,
         "status": "enrolling",
-        "created_at": datetime.now().isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
         "demo_mode": demo_mode,
         "trust_score": 100,
         "features": [],
@@ -83,7 +83,9 @@ def get_session(session_id: str):
     if row:
         data_str, expires_str = row
         expires_at = datetime.fromisoformat(expires_str)
-        if datetime.now() < expires_at:
+        # Handle both naive and timezone-aware datetimes safely
+        now_dt = datetime.now(timezone.utc) if expires_at.tzinfo is not None else datetime.now()
+        if now_dt < expires_at:
             return json.loads(data_str)
         else:
             # Clean up expired session
@@ -100,7 +102,7 @@ def save_session(session_id: str, session: dict):
             logger.debug(f"Redis fallback: {e}")
 
     # SQLite Save
-    expires_at = datetime.now() + timedelta(seconds=TTL_SECONDS)
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=TTL_SECONDS)
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("""
@@ -125,6 +127,23 @@ def delete_session(session_id: str):
     cursor.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
     conn.commit()
     conn.close()
+
+
+def prune_expired_sessions():
+    """
+    Data Retention & Cleanup: Purges expired session state records from storage.
+    """
+    if REDIS_CONNECTED:
+        return # Redis handles TTL automatically
+    
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM sessions WHERE expires_at < ?", (datetime.now(timezone.utc).isoformat(),))
+    deleted_count = cursor.rowcount
+    conn.commit()
+    conn.close()
+    if deleted_count > 0:
+        logger.info(f"[RETENTION] Pruned {deleted_count} expired session store records.")
 
 
 def set_exam_session_id(session_id: str, exam_session_id: int):

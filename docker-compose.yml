@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  backend:
+    build: .
+    container_name: trustguard_backend
+    ports:
+      - "8000:8000"
+    environment:
+      - TRUSTGUARD_JWT_SECRET=${TRUSTGUARD_JWT_SECRET:-super-secret-trustguard-key-change-in-production}
+      - TRUSTGUARD_ADMIN_PIN=${TRUSTGUARD_ADMIN_PIN:-1234}
+      - TRUSTGUARD_STEP_UP_PIN=${TRUSTGUARD_STEP_UP_PIN:-9999}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: trustguard_redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped

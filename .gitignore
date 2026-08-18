@@ -18,7 +18,10 @@ trustguard.db
 
 # Testing & Pickles
 .pytest_cache/
+.coverage
+htmlcov/
 *.pkl
+
 
 # OS Files
 Thumbs.db

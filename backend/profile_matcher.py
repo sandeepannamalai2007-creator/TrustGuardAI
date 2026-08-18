@@ -99,3 +99,27 @@ def compare_with_profile(
         )
         
     return round(similarity_score, 2), explanations
+
+
+def compute_adaptive_threshold(db: Session, profile: BehaviorProfile) -> float:
+    """
+    Priority C: Computes a personalized adaptive security threshold (30.0% to 65.0%)
+    based on a student's historical typing variance.
+    - Highly consistent typists -> tighter threshold (~60%)
+    - Variable typists -> broader threshold (~40%)
+    """
+    if not profile or not profile.student_id:
+        return 50.0
+
+    history = crud.get_student_feature_history(db, profile.student_id)
+    if len(history) < 5:
+        return 50.0
+
+    dwell_vals = [log.avg_dwell for log in history if log.avg_dwell > 0]
+    if len(dwell_vals) < 3:
+        return 50.0
+
+    std_dwell = float(np.std(dwell_vals))
+    # Base threshold starts at 55.0, scales down by 0.5 for each ms of natural variance
+    adaptive_t = 55.0 - (0.5 * min(std_dwell, 40.0))
+    return round(max(35.0, min(65.0, adaptive_t)), 1)

@@ -1,89 +1,122 @@
-import os
 import logging
+import os
+
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+from sqlalchemy.orm import Session
+
+from api_models import (
+    FeatureRequest,
+    FeatureResponse,
+    OverrideLockRequest,
+    OverrideUnlockRequest,
+    StartSessionRequest,
+    StartSessionResponse,
+    StepUpVerifyRequest,
+    StudentCreate,
+    StudentResponse,
+)
+from auth import create_access_token, verify_session_token
+from config import settings
+import crud
+from database import Base, engine, get_db
+import db_models
+from metrics import MetricsMiddleware, metrics_collector
+from profile_matcher import compare_with_profile, compute_adaptive_threshold
+from profile_service import update_student_profile
+from session_manager import (
+    add_features,
+    create_session,
+    get_session,
+    prune_expired_sessions,
+    save_session,
+    set_exam_session_id,
+)
+from trust_engine import (
+    calculate_trust_score,
+    is_step_up_required,
+    update_security_state,
+)
+import sys
+import os
+if os.path.join(os.path.dirname(__file__), '..') not in sys.path:
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from ml.predictor import reload_model as reload_ml_model
+from ml.retrain import retrain_model
 
 logger = logging.getLogger(__name__)
-ADMIN_PIN = os.environ.get("TRUSTGUARD_ADMIN_PIN", "1234")
-
-from fastapi import FastAPI, Depends, HTTPException, Header, Request
-from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
-
-limiter = Limiter(key_func=get_remote_address)
-from profile_service import update_student_profile
-from profile_matcher import compare_with_profile
-
-from database import get_db, Base, engine
-import db_models
-import crud
+ADMIN_PIN = settings.ADMIN_PIN
 
 Base.metadata.create_all(bind=engine)
 
-from api_models import (
-    StartSessionRequest,
-    StartSessionResponse,
-    FeatureRequest,
-    FeatureResponse,
-    StudentCreate,
-    StudentResponse
-)
+limiter = Limiter(key_func=get_remote_address)
 
-from session_manager import (
-    create_session,
-    get_session,
-    add_features,
-    set_exam_session_id,
-    save_session
-)
+from contextlib import asynccontextmanager
 
-from trust_engine import calculate_trust_score, update_security_state
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if settings.ADMIN_PIN == "1234":
+        logger.critical("[SECURITY WARNING] TRUSTGUARD_ADMIN_PIN is using default '1234'. Set this env var before production deployment.")
+    if "change-in-production" in settings.JWT_SECRET_KEY:
+        logger.critical("[SECURITY WARNING] TRUSTGUARD_JWT_SECRET is using default key. Set this env var before production deployment.")
+    yield
 
 app = FastAPI(
-    title="TrustGuard AI",
-    version="2.0"
+    title=settings.PROJECT_NAME,
+    version=settings.VERSION,
+    lifespan=lifespan
 )
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(MetricsMiddleware)
 
-# Scope CORS to trusted local origins and 'null' to support local file double-clicking
-trusted_origins = [
-    "http://localhost",
-    "http://127.0.0.1",
-    "http://localhost:8000",
-    "http://127.0.0.1:8000"
-]
+if settings.ENABLE_HTTPS_REDIRECT:
+    app.add_middleware(HTTPSRedirectMiddleware)
 
+# Scope CORS to trusted origins from settings
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=trusted_origins,
+    allow_origins=settings.ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type", "X-Admin-PIN"],
+    allow_headers=["Content-Type", "X-Admin-PIN", "Authorization"],
 )
 
 
-@app.get("/")
-def home():
-    return {
-        "project": "TrustGuard AI",
-        "status": "Running"
-    }
+
+
+from fastapi.staticfiles import StaticFiles
+
+frontend_dir = os.path.join(os.path.dirname(__file__), "..", "frontend")
+
 
 
 @app.get("/health")
 def health():
+    prune_expired_sessions()
     return {
         "status": "Healthy"
     }
+
+
+
+@app.get("/metrics")
+def get_metrics():
+    """
+    Prometheus telemetry endpoint for scraping application performance and trust score metrics.
+    """
+    return Response(content=metrics_collector.generate_prometheus_output(), media_type="text/plain; version=0.0.4")
 
 
 @app.post(
     "/session/start",
     response_model=StartSessionResponse
 )
-@limiter.limit("30/minute")
+@limiter.limit(settings.RATE_LIMIT_START)
 def start_session(
     request: Request,
     payload: StartSessionRequest,
@@ -113,11 +146,17 @@ def start_session(
     exam_session = crud.create_exam_session(db, student.id)
     set_exam_session_id(session["session_id"], exam_session.id)
 
+    # Generate JWT access token
+    access_token = create_access_token(data={"sub": payload.user_id, "session_id": session["session_id"]})
+
     return StartSessionResponse(
         session_id=session["session_id"],
         status=session["status"],
-        message="Session started successfully"
+        message="Session started successfully",
+        access_token=access_token,
+        token_type="bearer"
     )
+
 
 
 def _process_biometric_evaluation(db: Session, student, request: FeatureRequest):
@@ -180,8 +219,10 @@ def _log_security_audit(db: Session, session_id: str, trust_score: float, simila
 )
 def receive_features(
     request: FeatureRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    token_payload: dict = Depends(verify_session_token)
 ):
+
     logger.debug("receive_features() called")
     session = get_session(request.session_id)
     if not session:
@@ -196,20 +237,28 @@ def receive_features(
 
     session = get_session(request.session_id)
     student = crud.get_student(db, session["user_id"])
-    
+    profile = crud.get_behavior_profile(db, student.id) if student else None
+    adaptive_t = compute_adaptive_threshold(db, profile) if profile else 50.0
+
     trust_score, similarity_score, explanations = _process_biometric_evaluation(db, student, request)
+    metrics_collector.record_trust_score(trust_score)
     new_state = update_security_state(session, trust_score)
+
+    step_up = is_step_up_required(session)
     save_session(request.session_id, session)
 
     _log_security_audit(db, session["exam_session_id"], trust_score, similarity_score, request)
 
     return FeatureResponse(
-        status="locked" if new_state == "LOCKED" else "success",
-        message="Workstation Locked: Continuous security violations detected." if new_state == "LOCKED" else "Features received successfully",
+        status="locked" if new_state == "LOCKED" else ("warning" if step_up else "success"),
+        message="Workstation Locked: Continuous security violations detected." if new_state == "LOCKED" else ("Step-Up Authentication Required." if step_up else "Features received successfully"),
         trust_score=trust_score,
         security_state=new_state,
+        step_up_required=step_up,
+        adaptive_threshold=adaptive_t,
         explanations=explanations
     )
+
 
 
 @app.post(
@@ -236,8 +285,9 @@ def register_student(
 
 
 @app.get("/session/history")
-@limiter.limit("5/minute")
+@limiter.limit(settings.RATE_LIMIT_HISTORY)
 def get_session_history(
+
     request: Request,
     x_admin_pin: str = Header(None),
     db: Session = Depends(get_db)
@@ -264,3 +314,134 @@ def get_session_history(
             "typing_speed": log.typing_speed
         })
     return result
+
+
+
+@app.post("/session/step-up/verify")
+def verify_step_up(payload: StepUpVerifyRequest):
+    """
+    Priority C: Step-Up Re-Authentication Endpoint.
+    Validates user PIN challenge and resets low-trust escalation state.
+    """
+    session = get_session(payload.session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Invalid Session ID")
+
+    # Validate PIN against configured STEP_UP_PIN or ADMIN_PIN
+    if payload.pin not in (settings.STEP_UP_PIN, ADMIN_PIN):
+        raise HTTPException(status_code=401, detail="Invalid Step-Up Verification PIN")
+
+
+
+    session["security_state"] = "NORMAL"
+    session["low_trust_count"] = 0
+    session["high_trust_count"] = 0
+    session["step_up_completed"] = True
+    save_session(payload.session_id, session)
+
+    logger.info(f"[SECURITY] Step-Up Re-Authentication succeeded for session {payload.session_id}")
+    return {"status": "success", "message": "Step-Up verification successful. Workstation status restored to NORMAL.", "security_state": "NORMAL"}
+
+
+@app.post("/session/override/lock")
+def override_lock(payload: OverrideLockRequest):
+    """
+    Priority C: Administrative Force Lock Intervention.
+    """
+    if payload.admin_pin != ADMIN_PIN:
+        raise HTTPException(status_code=403, detail="Invalid Admin PIN")
+
+    session = get_session(payload.session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Invalid Session ID")
+
+    session["security_state"] = "LOCKED"
+    save_session(payload.session_id, session)
+    logger.warning(f"[ADMIN OVERRIDE] Session {payload.session_id} forcibly LOCKED by administrator.")
+    return {"status": "locked", "message": "Workstation forcibly locked by administrator.", "security_state": "LOCKED"}
+
+
+@app.post("/session/override/unlock")
+def override_unlock(payload: OverrideUnlockRequest):
+    """
+    Priority C: Administrative Emergency Unlock Override.
+    """
+    if payload.admin_pin != ADMIN_PIN:
+        raise HTTPException(status_code=403, detail="Invalid Admin PIN")
+
+    session = get_session(payload.session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Invalid Session ID")
+
+    session["security_state"] = "NORMAL"
+    session["low_trust_count"] = 0
+    session["high_trust_count"] = 0
+    session["step_up_completed"] = True
+    save_session(payload.session_id, session)
+    logger.info(f"[ADMIN OVERRIDE] Session {payload.session_id} unlocked by administrator.")
+    return {"status": "success", "message": "Workstation lock cleared by administrator.", "security_state": "NORMAL"}
+
+
+@app.get("/session/export/csv")
+def export_csv_report(
+    x_admin_pin: str = Header(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Priority C: Export Security Audit Logs as CSV Report.
+    """
+    if x_admin_pin != ADMIN_PIN:
+        raise HTTPException(status_code=403, detail="Invalid Admin Security PIN")
+
+    logs = crud.get_security_audit_logs(db, limit=200)
+    
+    csv_lines = ["Timestamp,Student_ID,Session_ID,Trust_Score,Decision_Score,Avg_Dwell_ms,Avg_Flight_ms,Typing_Speed_cps"]
+    for log, student_id in logs:
+        ts = log.timestamp.isoformat() if log.timestamp else ""
+        csv_lines.append(f"{ts},{student_id},{log.session_id},{log.trust_score:.1f},{log.decision_score:.3f},{log.avg_dwell:.2f},{log.avg_flight:.2f},{log.typing_speed:.2f}")
+
+    content = "\n".join(csv_lines)
+    return Response(
+        content=content,
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="trustguard_audit_report.csv"'}
+    )
+
+
+@app.post("/admin/retrain")
+def trigger_model_retrain(x_admin_pin: str = Header(None, alias="X-Admin-PIN"), force: bool = False):
+    """
+    Admin endpoint to trigger on-demand Isolation Forest model retraining.
+    Loads all trusted TrustLog records (trust_score >= 60), retrains the model
+    if at least 50 new samples exist, then hot-reloads the predictor.
+    Pass ?force=true to retrain regardless of sample count.
+    """
+    if x_admin_pin != ADMIN_PIN:
+        raise HTTPException(status_code=403, detail="Invalid Admin PIN")
+
+    result = retrain_model(force=force)
+    if result["triggered"]:
+        reload_ml_model()
+        logger.info("[ADMIN] Model retrained and hot-reloaded.")
+
+    return {
+        "triggered": result["triggered"],
+        "message": result["message"],
+        "samples_used": result["samples_used"]
+    }
+
+
+from fastapi.responses import FileResponse
+
+@app.get("/")
+def serve_root():
+    capture_path = os.path.join(frontend_dir, "capture.html")
+    if os.path.exists(capture_path):
+        return FileResponse(capture_path)
+    return {"project": settings.PROJECT_NAME, "version": settings.VERSION, "status": "Running"}
+
+# Serve Frontend Web Application (capture.html, style.css, script.js, modules/*.js)
+if os.path.exists(frontend_dir):
+    app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")
+
+

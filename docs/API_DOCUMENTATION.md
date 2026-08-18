@@ -8,7 +8,12 @@ Interactive OpenAPI/Swagger documentation is available at: [http://127.0.0.1:800
 Starts a new continuous authentication session.
 
 **Request Schema:**
-None (empty body).
+```json
+{
+  "user_id": "string",
+  "demo_mode": true
+}
+```
 
 **Response Schema:**
 ```json
@@ -27,6 +32,9 @@ curl -X POST http://127.0.0.1:8000/session/start
 Submits behavioral biometric telemetry for evaluation.
 
 **Rate Limits:** 1 request per second per session (recommended).
+
+**Headers:**
+- `Authorization: Bearer <token>`: Required. The JWT token received from `POST /session/start`.
 
 **Request Schema:**
 ```json
@@ -77,4 +85,146 @@ Returns the health status of the API.
 {
   "status": "healthy"
 }
+```
+
+---
+
+## `POST /session/step-up/verify`
+Validates user Security PIN during step-up re-authentication challenge. Resets trust state to NORMAL on success.
+
+**Request Schema:**
+```json
+{
+  "session_id": "string (UUID)",
+  "pin": "string"
+}
+```
+
+**Response Schema:**
+```json
+{
+  "status": "success",
+  "message": "Step-Up verification successful.",
+  "security_state": "NORMAL"
+}
+```
+
+**Error Codes:**
+- `401 Unauthorized` — Invalid PIN.
+- `404 Not Found` — Invalid Session.
+
+**Example:**
+```bash
+curl -X POST http://127.0.0.1:8000/session/step-up/verify \
+  -H "Content-Type: application/json" \
+  -d '{"session_id": "<uuid>", "pin": "<your-pin>"}'
+```
+
+## `POST /session/override/lock`
+Admin force-lock — immediately sets session security state to LOCKED regardless of trust score.
+
+**Request Schema:**
+```json
+{
+  "session_id": "string",
+  "admin_pin": "string"
+}
+```
+
+**Response Schema:**
+```json
+{
+  "status": "locked",
+  "message": "Session forcibly locked."
+}
+```
+
+**Error Codes:**
+- `403 Forbidden` — Invalid PIN.
+- `404 Not Found` — Invalid Session.
+
+**Example:**
+```bash
+curl -X POST http://127.0.0.1:8000/session/override/lock \
+  -H "Content-Type: application/json" \
+  -d '{"session_id": "<uuid>", "admin_pin": "<admin-pin>"}'
+```
+
+## `POST /session/override/unlock`
+Admin emergency unlock — resets session security state to NORMAL.
+
+**Request Schema:**
+```json
+{
+  "session_id": "string",
+  "admin_pin": "string"
+}
+```
+
+**Response Schema:**
+```json
+{
+  "status": "unlocked",
+  "message": "Session unlocked by admin."
+}
+```
+
+**Error Codes:**
+- `403 Forbidden` — Invalid PIN.
+- `404 Not Found` — Invalid Session.
+
+**Example:**
+```bash
+curl -X POST http://127.0.0.1:8000/session/override/unlock \
+  -H "Content-Type: application/json" \
+  -d '{"session_id": "<uuid>", "admin_pin": "<admin-pin>"}'
+```
+
+## `GET /session/export/csv`
+Exports all TrustLog audit records as a downloadable CSV compliance report.
+
+**Headers:**
+- `X-Admin-PIN`: Required. The admin PIN for authorization.
+
+**Response:** CSV file download (`Content-Type: text/csv`).
+
+**Error Codes:**
+- `403 Forbidden` — Invalid PIN.
+
+**Example:**
+```bash
+curl -X GET http://127.0.0.1:8000/session/export/csv \
+  -H "X-Admin-PIN: <admin-pin>" \
+  --output trustlog_export.csv
+```
+
+## `POST /admin/retrain`
+Triggers on-demand Isolation Forest model retraining on accumulated trusted session data. Hot-reloads the model in-process without a server restart.
+
+Requires at least **50 trusted samples** (`trust_score >= 60`). Pass `?force=true` to override the sample threshold.
+
+**Headers:**
+- `X-Admin-PIN`: Required. The admin PIN for authorization.
+
+**Query Parameters:**
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `force` | bool | `false` | If `true`, bypasses the minimum sample threshold. |
+
+**Response Schema:**
+```json
+{
+  "triggered": true,
+  "message": "Retrained on N samples.",
+  "samples_used": 124
+}
+```
+
+**Error Codes:**
+- `403 Forbidden` — Invalid PIN.
+
+**Example:**
+```bash
+curl -X POST "http://127.0.0.1:8000/admin/retrain?force=true" \
+  -H "X-Admin-PIN: <admin-pin>"
 ```

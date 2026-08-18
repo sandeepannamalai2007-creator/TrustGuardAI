@@ -1,12 +1,7 @@
-import json
-import urllib.request
-import urllib.error
-import time
 import pytest
 
-API_URL = "http://127.0.0.1:8000"
-
 def test_api_session_flow(client):
+
     # 1. Start Session
     start_data = {
         "user_id": "TestStudent",
@@ -17,7 +12,10 @@ def test_api_session_flow(client):
     assert response.status_code == 200
     data = response.json()
     assert "session_id" in data
+    assert "access_token" in data
     session_id = data["session_id"]
+    access_token = data["access_token"]
+    headers = {"Authorization": f"Bearer {access_token}"}
 
     # 2. Send features (typing data)
     feature_data = {
@@ -33,7 +31,7 @@ def test_api_session_flow(client):
         "session_duration_s": 5.0
     }
 
-    response = client.post("/session/features", json=feature_data)
+    response = client.post("/session/features", json=feature_data, headers=headers)
     assert response.status_code == 200
     data = response.json()
     assert data["trust_score"] > 0
@@ -53,12 +51,16 @@ def test_api_session_flow(client):
         "session_duration_s": 10.0
     }
 
-    response = client.post("/session/features", json=feature_data_no_type)
+    response = client.post("/session/features", json=feature_data_no_type, headers=headers)
     assert response.status_code == 200
     data = response.json()
     assert data["trust_score"] == 100.0
 
-    # 4. Send features (Script Bot spoofing timing variance check)
+    # 4. Send features without Auth Header -> Expect 401 Unauthorized
+    unauth_response = client.post("/session/features", json=feature_data_no_type)
+    assert unauth_response.status_code == 401
+
+    # 5. Send features (Script Bot spoofing timing variance check)
     feature_data_bot = {
         "session_id": session_id,
         "avg_dwell_time_ms": 100.0,
@@ -72,9 +74,8 @@ def test_api_session_flow(client):
         "session_duration_s": 15.0
     }
 
-    response = client.post("/session/features", json=feature_data_bot)
+    response = client.post("/session/features", json=feature_data_bot, headers=headers)
     assert response.status_code == 200
     data = response.json()
     assert data["trust_score"] <= 1e-6
-    # Add an assertion for state machine lock status if applicable
     assert data["security_state"] == "LOCKED"

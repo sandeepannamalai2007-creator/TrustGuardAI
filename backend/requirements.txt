@@ -12,3 +12,5 @@ pytest
 psycopg2-binary
 slowapi
 httpx
+pyjwt
+pydantic-settings

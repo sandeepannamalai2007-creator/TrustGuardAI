@@ -28,6 +28,196 @@
     --text-cyber-glow: rgba(56, 189, 248, 0.3);
 }
 
+/* ==========================================================================
+   Comprehensive Light Theme Overrides
+   ========================================================================== */
+[data-theme="light"] {
+    --bg-darker: #f8fafc;
+    --bg-dark: #f1f5f9;
+    --bg-card: #ffffff;
+    --border-color: #cbd5e1;
+    --text-primary: #0f172a;
+    --text-muted: #475569;
+    --text-cyber: #0284c7;
+    --text-cyber-glow: rgba(2, 132, 199, 0.2);
+}
+
+[data-theme="light"] body {
+    background-color: #f8fafc;
+    background-image: 
+        radial-gradient(at 0% 0%, rgba(2, 132, 199, 0.06) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(124, 58, 237, 0.06) 0px, transparent 50%);
+    color: #0f172a;
+}
+
+[data-theme="light"] .app-header {
+    background: rgba(255, 255, 255, 0.9);
+    border-color: #cbd5e1;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+}
+
+[data-theme="light"] .card {
+    background: #ffffff;
+    border-color: #e2e8f0;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+}
+
+[data-theme="light"] .card:hover {
+    border-color: #0284c7;
+    box-shadow: 0 8px 30px rgba(2, 132, 199, 0.12);
+}
+
+[data-theme="light"] textarea {
+    background: #f1f5f9;
+    border-color: #cbd5e1;
+    color: #0f172a;
+}
+
+[data-theme="light"] textarea:focus {
+    background: #ffffff;
+    border-color: #0284c7;
+    box-shadow: 0 0 15px rgba(2, 132, 199, 0.2);
+}
+
+[data-theme="light"] textarea::placeholder {
+    color: #94a3b8;
+}
+
+[data-theme="light"] .form-select,
+[data-theme="light"] #adminPinInput,
+[data-theme="light"] #userIdInput {
+    background: #f1f5f9 !important;
+    border-color: #cbd5e1 !important;
+    color: #0f172a !important;
+}
+
+[data-theme="light"] .btn-secondary {
+    background: #e2e8f0;
+    border-color: #cbd5e1;
+    color: #0f172a;
+}
+
+[data-theme="light"] .btn-secondary:hover {
+    background: #e0f2fe;
+    border-color: #0284c7;
+    color: #0284c7;
+}
+
+[data-theme="light"] .feed-terminal {
+    background: #f1f5f9;
+    border-color: #cbd5e1;
+    color: #0f172a;
+}
+
+[data-theme="light"] .feed-system { color: #64748b; }
+[data-theme="light"] .feed-info { color: #0284c7; }
+[data-theme="light"] .feed-time { color: #94a3b8; }
+
+[data-theme="light"] #kinematicsCanvas {
+    background-color: #f1f5f9;
+    background-image: 
+        linear-gradient(rgba(0,0,0,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,0,0,0.03) 1px, transparent 1px);
+    border-color: #cbd5e1;
+    box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.05);
+}
+
+[data-theme="light"] .ledger-lock-panel {
+    background: #f1f5f9;
+    border-color: #cbd5e1;
+}
+
+[data-theme="light"] .audit-table {
+    background: #ffffff;
+}
+
+[data-theme="light"] .audit-table th {
+    background: #f1f5f9;
+    color: #0284c7;
+    border-bottom-color: #cbd5e1;
+}
+
+[data-theme="light"] .audit-table td {
+    color: #334155;
+    border-bottom-color: #e2e8f0;
+}
+
+[data-theme="light"] .audit-table tr:hover {
+    background: #f8fafc;
+}
+
+[data-theme="light"] .metric-comparison-box {
+    background: #f1f5f9;
+    border-color: #e2e8f0;
+}
+
+[data-theme="light"] .metric-comparison-box:hover {
+    background: #e2e8f0;
+    border-color: #0284c7;
+}
+
+[data-theme="light"] .metric-icon {
+    background: #e0f2fe;
+    border-color: #bae6fd;
+}
+
+[data-theme="light"] .value-highlight {
+    color: #0284c7;
+    text-shadow: none;
+}
+
+[data-theme="light"] .value-baseline {
+    color: #475569;
+}
+
+[data-theme="light"] .value-label {
+    color: #64748b;
+}
+
+[data-theme="light"] .btn-simulator {
+    background: #e2e8f0;
+    border-color: #cbd5e1;
+    color: #475569;
+}
+
+[data-theme="light"] .btn-simulator:hover {
+    background: #e0f2fe;
+    border-color: #0284c7;
+    color: #0284c7;
+}
+
+[data-theme="light"] .sim-btn-active {
+    background: #0284c7 !important;
+    border-color: #0284c7 !important;
+    color: #ffffff !important;
+    box-shadow: 0 2px 10px rgba(2, 132, 199, 0.3);
+}
+
+[data-theme="light"] .terminal-badge {
+    background: #e0f2fe;
+    color: #0284c7;
+    border-color: #bae6fd;
+}
+
+[data-theme="light"] .app-loader {
+    background: #f8fafc !important;
+}
+
+[data-theme="light"] .loader-title {
+    color: #0f172a !important;
+}
+
+[data-theme="light"] .loader-subtitle,
+[data-theme="light"] .loader-status {
+    color: #475569 !important;
+}
+
+[data-theme="light"] .gauge-track {
+    stroke: rgba(0, 0, 0, 0.06);
+}
+
+
+
 /* Reset & Base */
 * {
     margin: 0;
@@ -167,20 +357,59 @@ body {
 }
 
 .card {
+    position: relative;
     background: var(--bg-card);
     border: 1px solid var(--border-color);
     border-radius: 20px;
     padding: 25px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
     backdrop-filter: blur(12px);
-    transform-style: preserve-3d;
-    transition: transform 0.25s cubic-bezier(0.25, 1, 0.5, 1), box-shadow 0.3s ease, border-color 0.3s ease;
+    overflow: hidden;
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease, border-color 0.3s ease;
+}
+
+.card > * {
+    position: relative;
+    z-index: 2;
+}
+
+.card::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    border-radius: inherit;
+    background: radial-gradient(
+        450px circle at var(--mouse-x, 50%) var(--mouse-y, 50%),
+        rgba(56, 189, 248, 0.14),
+        transparent 40%
+    );
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+    z-index: 1;
+}
+
+[data-theme="light"] .card::before {
+    background: radial-gradient(
+        450px circle at var(--mouse-x, 50%) var(--mouse-y, 50%),
+        rgba(2, 132, 199, 0.10),
+        transparent 40%
+    );
+}
+
+.card:hover::before {
+    opacity: 1;
 }
 
 .card:hover {
-    border-color: rgba(56, 189, 248, 0.3);
-    box-shadow: 0 12px 40px rgba(56, 189, 248, 0.08);
+    transform: translateY(-4px);
+    border-color: rgba(56, 189, 248, 0.35);
+    box-shadow: 0 20px 45px -10px rgba(0, 0, 0, 0.5), 0 0 25px rgba(56, 189, 248, 0.12);
 }
+
 
 .card-header {
     display: flex;

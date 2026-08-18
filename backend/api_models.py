@@ -31,6 +31,9 @@ class StartSessionResponse(BaseModel):
     session_id: str
     status: str
     message: str
+    access_token: str | None = None
+    token_type: str = "bearer"
+
 
 
 # ==========================
@@ -61,4 +64,25 @@ class FeatureResponse(BaseModel):
     message: str
     trust_score: float
     security_state: str = "NORMAL"
+    step_up_required: bool = False
+    adaptive_threshold: float = 50.0
     explanations: list[str] = []
+
+
+# ==========================
+# Priority C API Request Models
+# ==========================
+
+class StepUpVerifyRequest(BaseModel):
+    session_id: str
+    pin: str = Field(..., min_length=1, max_length=10)
+
+
+class OverrideLockRequest(BaseModel):
+    session_id: str
+    admin_pin: str = Field(..., min_length=1, max_length=10)
+
+
+class OverrideUnlockRequest(BaseModel):
+    session_id: str
+    admin_pin: str = Field(..., min_length=1, max_length=10)

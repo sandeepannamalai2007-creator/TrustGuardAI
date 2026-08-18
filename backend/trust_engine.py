@@ -1,6 +1,8 @@
-import sys
-import os
 import logging
+import math
+from collections import Counter
+
+from ml.predictor import predict_trust_score
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +14,19 @@ ESCALATION_THRESHOLD = 3
 DEESCALATION_THRESHOLD = 2
 TRUST_THRESHOLD = 50
 
-from ml.predictor import predict_trust_score
+
+def calculate_shannon_entropy(val_list):
+    """
+    Computes Shannon entropy (in bits) of a list of timing values.
+    Low entropy (< 0.5) indicates highly repetitive automated script signals.
+    """
+    if not val_list or len(val_list) < 2:
+        return 1.0
+    rounded = [round(v, 1) for v in val_list]
+    counts = Counter(rounded)
+    total = len(rounded)
+    entropy = -sum((cnt / total) * math.log2(cnt / total) for cnt in counts.values())
+    return entropy
 
 
 def calculate_trust_score(
@@ -23,30 +37,37 @@ def calculate_trust_score(
     Calculate the final trust score by combining:
     1. AI model prediction
     2. Behaviour profile similarity
+    3. Shannon entropy and micro-variance bot checks
     """
-
-    # Biometric Anti-Spoofing / Bot Detection:
-    # Check for timing variance. Real human typing has natural micro-timing fluctuations.
-    # Script bots type with near-perfect timing precision (zero variance).
-    # If the user has typed at least 5 characters and standard deviation is < 2ms,
-    # it is highly likely an automated typing script.
     keystroke_count = features.get("keystroke_count", 0)
+    entropy_penalty = 1.0
+
     if keystroke_count >= MIN_KEYSTROKES_FOR_AI:
         std_dwell = features.get("std_dwell_time_ms", 0.0)
         std_flight = features.get("std_flight_time_ms", 0.0)
-        
+        avg_dwell = features.get("avg_dwell_time_ms", 0.0)
+        avg_flight = features.get("avg_flight_time_ms", 0.0)
+
         if std_dwell < BOT_STD_THRESHOLD or std_flight < BOT_STD_THRESHOLD:
             logger.warning(f"[SECURITY ALERT] Synthetic bot detected! std_dwell={std_dwell:.2f}ms, std_flight={std_flight:.2f}ms")
             return 0.0
+
+        # Calculate Shannon entropy over timing vector
+        timing_vector = [avg_dwell, std_dwell, avg_flight, std_flight]
+        entropy_val = calculate_shannon_entropy(timing_vector)
+        if entropy_val < 0.5:
+            entropy_penalty = max(0.5, entropy_val)
+            logger.warning(f"[SECURITY ALERT] Low Shannon entropy detected: {entropy_val:.3f}")
 
     ai_score = predict_trust_score(features)
 
     final_score = (
         ai_score * AI_WEIGHT +
         similarity_score * SIMILARITY_WEIGHT
-    )
+    ) * entropy_penalty
 
     return round(final_score, 2)
+
 
 
 def update_security_state(session: dict, trust_score: float) -> str:
@@ -78,6 +99,7 @@ def update_security_state(session: dict, trust_score: float) -> str:
         high_trust_count = 0
         
         if low_trust_count >= ESCALATION_THRESHOLD:
+            old_state = current_state
             if current_state == "NORMAL":
                 current_state = "SUSPICIOUS"
             elif current_state == "SUSPICIOUS":
@@ -85,6 +107,8 @@ def update_security_state(session: dict, trust_score: float) -> str:
             elif current_state == "HIGH_RISK":
                 current_state = "LOCKED"
             low_trust_count = 0
+            if current_state != old_state:
+                session["step_up_completed"] = False
     else:
         high_trust_count += 1
         low_trust_count = 0
@@ -94,9 +118,21 @@ def update_security_state(session: dict, trust_score: float) -> str:
                 current_state = "SUSPICIOUS"
             elif current_state == "SUSPICIOUS":
                 current_state = "NORMAL"
+                session["step_up_completed"] = False
             high_trust_count = 0
 
     session["security_state"] = current_state
     session["low_trust_count"] = low_trust_count
     session["high_trust_count"] = high_trust_count
     return current_state
+
+
+
+def is_step_up_required(session: dict) -> bool:
+    """
+    Returns True if current security state requires Step-Up Re-Authentication challenge
+    before de-escalating or escalating further.
+    """
+    state = session.get("security_state", "NORMAL")
+    step_up_done = session.get("step_up_completed", False)
+    return state in ("SUSPICIOUS", "HIGH_RISK") and not step_up_done
