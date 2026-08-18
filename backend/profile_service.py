@@ -1,6 +1,5 @@
-from sqlalchemy.orm import Session
-
 import crud
+from sqlalchemy.orm import Session
 
 
 def update_student_profile(

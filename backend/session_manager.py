@@ -1,8 +1,8 @@
-import uuid
 import json
+import logging
 import os
 import sqlite3
-import logging
+import uuid
 from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
@@ -21,7 +21,7 @@ try:
     redis_client.ping()
     REDIS_CONNECTED = True
     logger.info("[SUCCESS] Session Manager: Connected to Redis on localhost:6379")
-except Exception as e:
+except (redis.RedisError, ImportError, AttributeError, ConnectionError) as e:
     logger.warning(f"[WARNING] Session Manager: Redis unavailable ({e}). Falling back to local SQLite session store.")
 
 # SQLite Fallback Setup
@@ -70,7 +70,7 @@ def get_session(session_id: str):
             if data:
                 return json.loads(data)
             return None
-        except Exception as e:
+        except (redis.RedisError, AttributeError) as e:
             logger.debug(f"Redis fallback: {e}") # Fail open to SQLite lookup if Redis goes down mid-run
             
     # SQLite Lookup
@@ -84,7 +84,9 @@ def get_session(session_id: str):
         data_str, expires_str = row
         expires_at = datetime.fromisoformat(expires_str)
         # Handle both naive and timezone-aware datetimes safely
-        now_dt = datetime.now(timezone.utc) if expires_at.tzinfo is not None else datetime.now()
+        now_dt = datetime.now(timezone.utc)
+
+
         if now_dt < expires_at:
             return json.loads(data_str)
         else:
@@ -98,7 +100,7 @@ def save_session(session_id: str, session: dict):
         try:
             redis_client.setex(session_id, TTL_SECONDS, json.dumps(session))
             return
-        except Exception as e:
+        except (redis.RedisError, AttributeError) as e:
             logger.debug(f"Redis fallback: {e}")
 
     # SQLite Save
@@ -118,8 +120,9 @@ def delete_session(session_id: str):
         try:
             redis_client.delete(session_id)
             return
-        except Exception as e:
+        except (redis.RedisError, AttributeError) as e:
             logger.debug(f"Redis fallback: {e}")
+
             
     # SQLite Delete
     conn = sqlite3.connect(DB_PATH)

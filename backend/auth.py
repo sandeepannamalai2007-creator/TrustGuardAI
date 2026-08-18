@@ -1,13 +1,13 @@
-import jwt
 from datetime import datetime, timedelta, timezone
-from typing import Optional
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+
+import jwt
 from config import settings
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 security_scheme = HTTPBearer(auto_error=False)
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
     """
     Generates a signed JWT access token for a given session payload.
     """
@@ -38,7 +38,7 @@ def decode_access_token(token: str) -> dict:
             headers={"WWW-Authenticate": "Bearer"}
         )
 
-def verify_session_token(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_scheme)) -> dict:
+def verify_session_token(credentials: HTTPAuthorizationCredentials | None = Depends(security_scheme)) -> dict:
     """
     FastAPI dependency to verify session token from Authorization: Bearer <token>.
     Falls back gracefully if token is absent or invalid.

@@ -1,9 +1,11 @@
 """Mahalanobis-distance biometric profile comparison engine."""
 import math
-import numpy as np
-from sqlalchemy.orm import Session
-from db_models import BehaviorProfile
+
 import crud
+import numpy as np
+from db_models import BehaviorProfile
+from sqlalchemy.orm import Session
+
 
 def compare_with_profile(
     db: Session,
@@ -63,7 +65,8 @@ def compare_with_profile(
         diff = x - mu
         dm2 = diff.T @ inv_cov @ diff
         dm = np.sqrt(max(dm2, 0.0))
-    except Exception:
+    except (np.linalg.LinAlgError, ValueError, TypeError):
+
         # Ultimate fallback: Normalized Euclidean Distance (assuming independent default variances)
         diff = x - mu
         var = default_stds ** 2

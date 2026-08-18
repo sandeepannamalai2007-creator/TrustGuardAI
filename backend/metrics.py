@@ -1,8 +1,10 @@
-import time
-from fastapi import Request, Response
-from starlette.middleware.base import BaseHTTPMiddleware
-from collections import defaultdict
 import threading
+import time
+from collections import defaultdict
+
+from fastapi import Request
+from starlette.middleware.base import BaseHTTPMiddleware
+
 
 class MetricsCollector:
     def __init__(self):

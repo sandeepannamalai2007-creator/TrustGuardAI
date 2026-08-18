@@ -1,14 +1,8 @@
 import logging
 import os
+import sys
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
-from sqlalchemy.orm import Session
-
+import crud
 from api_models import (
     FeatureRequest,
     FeatureResponse,
@@ -22,9 +16,10 @@ from api_models import (
 )
 from auth import create_access_token, verify_session_token
 from config import settings
-import crud
 from database import Base, engine, get_db
-import db_models
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
 from metrics import MetricsMiddleware, metrics_collector
 from profile_matcher import compare_with_profile, compute_adaptive_threshold
 from profile_service import update_student_profile
@@ -36,13 +31,16 @@ from session_manager import (
     save_session,
     set_exam_session_id,
 )
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+from sqlalchemy.orm import Session
 from trust_engine import (
     calculate_trust_score,
     is_step_up_required,
     update_security_state,
 )
-import sys
-import os
+
 if os.path.join(os.path.dirname(__file__), '..') not in sys.path:
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from ml.predictor import reload_model as reload_ml_model
@@ -56,6 +54,7 @@ Base.metadata.create_all(bind=engine)
 limiter = Limiter(key_func=get_remote_address)
 
 from contextlib import asynccontextmanager
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -432,6 +431,7 @@ def trigger_model_retrain(x_admin_pin: str = Header(None, alias="X-Admin-PIN"), 
 
 
 from fastapi.responses import FileResponse
+
 
 @app.get("/")
 def serve_root():

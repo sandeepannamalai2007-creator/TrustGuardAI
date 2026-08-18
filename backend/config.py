@@ -1,6 +1,6 @@
 import os
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import List
 
 
 class Settings(BaseSettings):
@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     REDIS_PORT: int = int(os.environ.get("REDIS_PORT", "6379"))
 
     # Rate Limiting & Security
-    ALLOWED_ORIGINS: List[str] = [
+    ALLOWED_ORIGINS: list[str] = [
         "http://localhost",
         "http://127.0.0.1",
         "http://localhost:8000",

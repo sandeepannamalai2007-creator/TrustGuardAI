@@ -1,12 +1,11 @@
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import pytest
+from database import SessionLocal
 from fastapi.testclient import TestClient
 from main import app
-import crud
-from database import SessionLocal
 from profile_matcher import compute_adaptive_threshold
 
 client = TestClient(app)

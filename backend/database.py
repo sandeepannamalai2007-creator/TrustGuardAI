@@ -1,8 +1,8 @@
-from sqlalchemy import create_engine
-from sqlalchemy.orm import declarative_base
-from sqlalchemy.orm import sessionmaker
-import os
 import logging
+import os
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import declarative_base, sessionmaker
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +16,9 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 engine = None
 is_sqlite = False
 
-if DATABASE_URL and (DATABASE_URL.startswith("postgresql://") or DATABASE_URL.startswith("postgres://")):
+from sqlalchemy.exc import DatabaseError, OperationalError
+
+if DATABASE_URL and DATABASE_URL.startswith(("postgresql://", "postgres://")):
     try:
         # Check if we need to replace postgres:// with postgresql:// for SQLAlchemy compatibility
         if DATABASE_URL.startswith("postgres://"):
@@ -27,9 +29,10 @@ if DATABASE_URL and (DATABASE_URL.startswith("postgresql://") or DATABASE_URL.st
         conn = engine.connect()
         conn.close()
         logger.info("[SUCCESS] Database Connection: Connected to PostgreSQL database.")
-    except Exception as e:
+    except (OperationalError, DatabaseError) as e:
         logger.warning(f"[WARNING] PostgreSQL Connection failed ({e}). Falling back to local SQLite database.")
         engine = None
+
 
 if engine is None:
     DATABASE_URL = f"sqlite:///{SQLite_DB_PATH}"

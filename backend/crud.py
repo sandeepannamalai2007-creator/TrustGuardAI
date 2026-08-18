@@ -1,11 +1,5 @@
+from db_models import BehaviorProfile, ExamSession, Student, TrustLog
 from sqlalchemy.orm import Session
-
-from db_models import (
-    Student,
-    BehaviorProfile,
-    ExamSession,
-    TrustLog
-)
 
 
 def get_student(db: Session, student_id: str):

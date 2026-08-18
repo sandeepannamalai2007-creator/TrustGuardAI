@@ -1,11 +1,11 @@
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import pytest
+from auth import create_access_token, decode_access_token
 from fastapi.testclient import TestClient
 from main import app
-from auth import create_access_token, decode_access_token
 
 client = TestClient(app)
 

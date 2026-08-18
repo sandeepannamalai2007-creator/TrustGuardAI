@@ -1,18 +1,17 @@
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import pytest
+from database import Base, get_db
 from fastapi.testclient import TestClient
+from main import app
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-
-from main import app
-from database import get_db, Base
-import db_models
-
 from sqlalchemy.pool import StaticPool
+
 
 @pytest.fixture(scope="function")
 def engine():

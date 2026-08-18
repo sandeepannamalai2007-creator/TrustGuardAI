@@ -1,5 +1,5 @@
-import pytest
 from backend.trust_engine import update_security_state
+
 
 def test_update_security_state_immediate_lock():
     session = {"security_state": "NORMAL", "low_trust_count": 0, "high_trust_count": 0}

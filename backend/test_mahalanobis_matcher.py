@@ -1,6 +1,7 @@
-import pytest
 from unittest.mock import Mock, patch
+
 from backend.profile_matcher import compare_with_profile
+
 
 class MockProfile:
     def __init__(self):

@@ -9,3 +9,7 @@ description = "TrustGuardAI Project"
 
 [tool.hatch.build.targets.wheel]
 packages = ["backend", "ml"]
+
+[tool.ruff.lint]
+ignore = ["B008"]
+

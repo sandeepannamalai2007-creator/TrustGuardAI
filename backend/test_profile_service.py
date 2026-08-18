@@ -1,6 +1,7 @@
-from database import SessionLocal, Base, engine
 import crud
 import profile_service
+from database import Base, SessionLocal, engine
+
 
 def test_profile_lifecycle():
     # Guarantee schema is initialized in the test session SQLite

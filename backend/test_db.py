@@ -1,5 +1,6 @@
-from database import SessionLocal, Base, engine
 import crud
+from database import Base, SessionLocal, engine
+
 
 def test_db_operations():
     # Guarantee schema is initialized in the test session SQLite
