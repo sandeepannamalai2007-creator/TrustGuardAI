@@ -4,6 +4,7 @@ import sys
 
 import crud
 from api_models import (
+    AdminLoginRequest,
     FeatureRequest,
     FeatureResponse,
     OverrideLockRequest,
@@ -14,7 +15,7 @@ from api_models import (
     StudentCreate,
     StudentResponse,
 )
-from auth import create_access_token, verify_session_token
+from auth import create_access_token, verify_admin_token, verify_session_token
 from config import settings
 from database import Base, engine, get_db
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
@@ -145,8 +146,9 @@ def start_session(
     exam_session = crud.create_exam_session(db, student.id)
     set_exam_session_id(session["session_id"], exam_session.id)
 
-    # Generate JWT access token
-    access_token = create_access_token(data={"sub": payload.user_id, "session_id": session["session_id"]})
+    # Generate JWT access token with role
+    role = "admin" if (payload.admin_pin and payload.admin_pin == ADMIN_PIN) else "user"
+    access_token = create_access_token(data={"sub": payload.user_id, "session_id": session["session_id"], "role": role})
 
     return StartSessionResponse(
         session_id=session["session_id"],
@@ -155,6 +157,18 @@ def start_session(
         access_token=access_token,
         token_type="bearer"
     )
+
+
+@app.post("/admin/login")
+def admin_login(payload: AdminLoginRequest):
+    """
+    Admin authentication endpoint. Issues an admin-scoped JWT access token.
+    """
+    if payload.admin_pin != ADMIN_PIN:
+        raise HTTPException(status_code=403, detail="Invalid Admin Security PIN")
+    
+    access_token = create_access_token(data={"sub": "admin", "session_id": "admin_session", "role": "admin"})
+    return {"access_token": access_token, "token_type": "bearer", "role": "admin"}
 
 
 
@@ -223,9 +237,24 @@ def receive_features(
 ):
 
     logger.debug("receive_features() called")
+    
+    # 1. Enforce JWT session_id = request session_id
+    if request.session_id != token_payload.get("session_id"):
+        raise HTTPException(
+            status_code=403,
+            detail="Session ID in JWT token does not match requested session ID"
+        )
+
     session = get_session(request.session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Invalid Session ID")
+
+    # 2. Enforce JWT sub (user_id) = session user_id
+    if session.get("user_id") != token_payload.get("sub"):
+        raise HTTPException(
+            status_code=403,
+            detail="User ID in JWT token does not match session user ID"
+        )
 
     current_state = session.get("security_state", "NORMAL")
     if current_state == "LOCKED":
@@ -286,14 +315,14 @@ def register_student(
 @app.get("/session/history")
 @limiter.limit(settings.RATE_LIMIT_HISTORY)
 def get_session_history(
-
     request: Request,
     x_admin_pin: str = Header(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    admin_token: dict = Depends(verify_admin_token)
 ):
     """
     Secure endpoint returning database session trust logs.
-    Requires header X-Admin-PIN = "1234".
+    Requires Bearer JWT with admin role AND header X-Admin-PIN.
     """
     if x_admin_pin != ADMIN_PIN:
         raise HTTPException(status_code=403, detail="Invalid Admin Security PIN")
@@ -317,20 +346,29 @@ def get_session_history(
 
 
 @app.post("/session/step-up/verify")
-def verify_step_up(payload: StepUpVerifyRequest):
+def verify_step_up(
+    payload: StepUpVerifyRequest,
+    token_payload: dict = Depends(verify_session_token)
+):
     """
     Priority C: Step-Up Re-Authentication Endpoint.
-    Validates user PIN challenge and resets low-trust escalation state.
+    Requires valid JWT token matching the session_id and user_id, plus user PIN challenge.
     """
+    # 1. Enforce JWT session_id = request session_id
+    if payload.session_id != token_payload.get("session_id"):
+        raise HTTPException(status_code=403, detail="Session ID in JWT token does not match requested session ID")
+
     session = get_session(payload.session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Invalid Session ID")
 
-    # Validate PIN against configured STEP_UP_PIN or ADMIN_PIN
+    # 2. Enforce JWT sub (user_id) = session user_id
+    if session.get("user_id") != token_payload.get("sub"):
+        raise HTTPException(status_code=403, detail="User ID in JWT token does not match session user ID")
+
+    # 3. Validate PIN against configured STEP_UP_PIN or ADMIN_PIN
     if payload.pin not in (settings.STEP_UP_PIN, ADMIN_PIN):
         raise HTTPException(status_code=401, detail="Invalid Step-Up Verification PIN")
-
-
 
     session["security_state"] = "NORMAL"
     session["low_trust_count"] = 0
@@ -343,9 +381,13 @@ def verify_step_up(payload: StepUpVerifyRequest):
 
 
 @app.post("/session/override/lock")
-def override_lock(payload: OverrideLockRequest):
+def override_lock(
+    payload: OverrideLockRequest,
+    admin_token: dict = Depends(verify_admin_token)
+):
     """
     Priority C: Administrative Force Lock Intervention.
+    Requires Admin JWT token and Admin PIN.
     """
     if payload.admin_pin != ADMIN_PIN:
         raise HTTPException(status_code=403, detail="Invalid Admin PIN")
@@ -361,9 +403,13 @@ def override_lock(payload: OverrideLockRequest):
 
 
 @app.post("/session/override/unlock")
-def override_unlock(payload: OverrideUnlockRequest):
+def override_unlock(
+    payload: OverrideUnlockRequest,
+    admin_token: dict = Depends(verify_admin_token)
+):
     """
     Priority C: Administrative Emergency Unlock Override.
+    Requires Admin JWT token and Admin PIN.
     """
     if payload.admin_pin != ADMIN_PIN:
         raise HTTPException(status_code=403, detail="Invalid Admin PIN")
@@ -384,10 +430,12 @@ def override_unlock(payload: OverrideUnlockRequest):
 @app.get("/session/export/csv")
 def export_csv_report(
     x_admin_pin: str = Header(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    admin_token: dict = Depends(verify_admin_token)
 ):
     """
     Priority C: Export Security Audit Logs as CSV Report.
+    Requires Admin JWT token and Admin PIN.
     """
     if x_admin_pin != ADMIN_PIN:
         raise HTTPException(status_code=403, detail="Invalid Admin Security PIN")
@@ -408,12 +456,14 @@ def export_csv_report(
 
 
 @app.post("/admin/retrain")
-def trigger_model_retrain(x_admin_pin: str = Header(None, alias="X-Admin-PIN"), force: bool = False):
+def trigger_model_retrain(
+    x_admin_pin: str = Header(None, alias="X-Admin-PIN"),
+    force: bool = False,
+    admin_token: dict = Depends(verify_admin_token)
+):
     """
     Admin endpoint to trigger on-demand Isolation Forest model retraining.
-    Loads all trusted TrustLog records (trust_score >= 60), retrains the model
-    if at least 50 new samples exist, then hot-reloads the predictor.
-    Pass ?force=true to retrain regardless of sample count.
+    Requires Admin JWT token and Admin PIN.
     """
     if x_admin_pin != ADMIN_PIN:
         raise HTTPException(status_code=403, detail="Invalid Admin PIN")

@@ -41,7 +41,7 @@ def decode_access_token(token: str) -> dict:
 def verify_session_token(credentials: HTTPAuthorizationCredentials | None = Depends(security_scheme)) -> dict:
     """
     FastAPI dependency to verify session token from Authorization: Bearer <token>.
-    Falls back gracefully if token is absent or invalid.
+    Raises 401 Unauthorized if token is missing or invalid.
     """
     if not credentials:
         raise HTTPException(
@@ -50,3 +50,18 @@ def verify_session_token(credentials: HTTPAuthorizationCredentials | None = Depe
             headers={"WWW-Authenticate": "Bearer"}
         )
     return decode_access_token(credentials.credentials)
+
+def verify_admin_token(credentials: HTTPAuthorizationCredentials | None = Depends(security_scheme)) -> dict:
+    """
+    FastAPI dependency to verify admin JWT token from Authorization: Bearer <token>.
+    Ensures that the token payload contains role == 'admin'.
+    """
+    payload = verify_session_token(credentials)
+    if payload.get("role") != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin role authorization required",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+    return payload
+

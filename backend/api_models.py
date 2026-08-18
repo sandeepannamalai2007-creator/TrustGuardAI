@@ -24,6 +24,7 @@ class StudentResponse(BaseModel):
 class StartSessionRequest(BaseModel):
     user_id: str = Field(..., min_length=2, max_length=50)
     demo_mode: bool = True
+    admin_pin: str | None = None
 
 
 class StartSessionResponse(BaseModel):
@@ -32,6 +33,11 @@ class StartSessionResponse(BaseModel):
     message: str
     access_token: str | None = None
     token_type: str = "bearer"
+
+
+class AdminLoginRequest(BaseModel):
+    admin_pin: str = Field(..., min_length=1, max_length=50)
+
 
 
 

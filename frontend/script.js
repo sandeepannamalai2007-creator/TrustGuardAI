@@ -49,6 +49,7 @@ let botInterval = null;
 let currentThreatMode = "human";
 
 const getSessionId = () => sessionId;
+const getAccessToken = () => accessToken;
 
 // -----------------------------------------------------------------------
 // Initialise theme, canvas, spotlight, modules
@@ -58,7 +59,8 @@ initBgRain();
 initKinematicsCanvas();
 initSpotlightGlow();
 initCapture(logTelemetry);
-initStepUpModal(getSessionId);
+initStepUpModal(getSessionId, getAccessToken);
+
 initAdminOverrides(getSessionId, () => lockWorkstation());
 initAuditLedger();
 initCsvExport();

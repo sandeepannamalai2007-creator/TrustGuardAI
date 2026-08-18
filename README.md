@@ -54,17 +54,27 @@ graph TD
 
 ---
 
-## 📊 Model Performance & Benchmarks
+## 📊 Model Performance & Biometric Evaluation
 
-The machine learning classifier was trained on **21,400 datasets** mapping human typing vectors against simulated bot attacks:
+TrustGuard AI enforces a **Subject-Disjoint Multi-Subject Evaluation Protocol** across all 51 subjects in the CMU Keystroke Dynamics Benchmark Dataset (20,400 total test trials), separated from automated evasion bot stress testing:
 
-| Metric | Score / Benchmark | Description |
+### 1. 🛡️ Adversarial Stress Testing (Bot Evasion)
+| Attack Vector | Sample Count | FAR (Allowed) | Defense Rate (Blocked) | Status |
+|---|---|---|---|---|
+| **Zero-Variance Script Bot** (`std_dwell=0.0ms`) | 500 | **0.00%** | **100.00%** | ✅ **Blocked (IDS Signature)** |
+| **Erratic Random Attacker** | 500 | **0.00%** | **100.00%** | ✅ **Blocked (Entropy Anomaly)** |
+
+### 2. 🧬 Subject-Disjoint Biometric Cross-Evaluation (51 Subjects, 20,400 Trials)
+| Metric | Evaluated Score | Context / Description |
 | :--- | :---: | :--- |
-| **False Rejection Rate (FRR)** | **`2.09%`** | Rate at which genuine humans are incorrectly flagged as suspicious. |
-| **False Acceptance Rate (FAR)** | **`0.00%`** | Rate at which automated script bots are incorrectly verified as genuine. |
-| **Average Human Score** | **`81.02%`** | Average confidence score generated during human typing. |
-| **Average Script Bot Score** | **`0.00%`** | Average score for bots (flagged immediately after 5 keys). |
-| **Average Erratic Attacker** | **`37.33%`** | Average score for random timing spoofing attacks. |
+| **Equal Error Rate (EER)** | **`40.08%`** | Threshold where $FAR = FRR$ at operating threshold $T = 60.5\%$. |
+| **ROC Area Under Curve (AUC)** | **`0.6330`** | Overall discrimination power across all decision boundaries. |
+| **False Rejection Rate (FRR)** | **`17.32%`** | Rate of genuine users flagged at default threshold $T = 50.0\%$. |
+| **False Acceptance Rate (FAR)** | **`72.81%`** | Cross-subject human impostors allowed on short 10-key vectors ($T = 50.0\%$). |
+| **F1-Score / Precision / Recall** | **`0.6472`** / **`0.5317`** / **`0.8268`** | Harmonic performance metric across 20,400 subject-disjoint test trials. |
+
+> Detailed evaluation methodologies, confusion matrices, and ROC curve curves are documented in [`docs/EVALUATION_METRICS.md`](docs/EVALUATION_METRICS.md).
+
 
 ---
 

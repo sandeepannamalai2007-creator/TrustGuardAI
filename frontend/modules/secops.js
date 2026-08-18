@@ -56,7 +56,7 @@ export function hideStepUpModal() {
     if (modal) modal.style.display = "none";
 }
 
-export function initStepUpModal(getSessionId) {
+export function initStepUpModal(getSessionId, getAccessToken) {
     const verifyStepUpBtn = document.getElementById("verifyStepUpBtn");
     const stepUpPinInput = document.getElementById("stepUpPinInput");
     const stepUpErrorMsg = document.getElementById("stepUpErrorMsg");
@@ -70,9 +70,10 @@ export function initStepUpModal(getSessionId) {
             return;
         }
         try {
-            await apiVerifyStepUp(getSessionId(), pin);
+            await apiVerifyStepUp(getSessionId(), pin, getAccessToken ? getAccessToken() : null);
             hideStepUpModal();
             if (stepUpPinInput) stepUpPinInput.value = "";
+
             if (stepUpErrorMsg) stepUpErrorMsg.textContent = "";
             logTelemetry("[STEP-UP AUTH] Re-authentication successful! Trust state restored.", "success");
             updateLiveStatus("Step-Up verification successful. Normal security status restored.");
