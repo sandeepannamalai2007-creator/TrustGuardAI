@@ -1,5 +1,14 @@
+import logging
+
 import crud
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
+
+# Strict criteria for profile baseline adaptation to prevent profile poisoning
+MIN_TRUST_SCORE = 70.0
+MIN_SIMILARITY_SCORE = 60.0
+MIN_TRUSTED_OBSERVATIONS = 3
 
 
 def update_student_profile(
@@ -8,17 +17,26 @@ def update_student_profile(
     avg_dwell_time: float,
     avg_flight_time: float,
     typing_speed: float,
-    mouse_velocity: float
-):
+    mouse_velocity: float,
+    trust_score: float = 100.0,
+    similarity_score: float = 100.0,
+    security_state: str = "NORMAL",
+    high_trust_count: int = 3
+) -> bool:
     """
-    Create a new behaviour profile if it doesn't exist,
-    otherwise update the existing one.
-    """
+    Updates the user's behavioral profile baseline if and only if strict conditions are met:
+    1. High Trust Score (trust_score >= 70.0)
+    2. High Profile Similarity (similarity_score >= 60.0)
+    3. Stable Security State (security_state == "NORMAL")
+    4. Multiple Observations (high_trust_count >= 3 consecutive trusted windows)
 
+    Maintains existing 10% max drift protection (cap_change) in crud.update_behavior_profile.
+    """
     profile = crud.get_behavior_profile(db, student_id)
 
     if profile is None:
-
+        # Initialize initial baseline profile
+        logger.info(f"[PROFILE INIT] Establishing baseline profile for student {student_id}")
         return crud.create_behavior_profile(
             db=db,
             student_id=student_id,
@@ -28,6 +46,24 @@ def update_student_profile(
             mouse_velocity=mouse_velocity
         )
 
+    # Validate multi-factor criteria for baseline update (Poisoning Resistance)
+    if trust_score < MIN_TRUST_SCORE:
+        logger.info(f"[PROFILE SHIELD] Rejected profile update: Trust score {trust_score:.1f}% < {MIN_TRUST_SCORE:.1f}%")
+        return None
+
+    if similarity_score < MIN_SIMILARITY_SCORE:
+        logger.info(f"[PROFILE SHIELD] Rejected profile update: Similarity score {similarity_score:.1f}% < {MIN_SIMILARITY_SCORE:.1f}%")
+        return None
+
+    if security_state != "NORMAL":
+        logger.info(f"[PROFILE SHIELD] Rejected profile update: Security state '{security_state}' != 'NORMAL'")
+        return None
+
+    if high_trust_count < MIN_TRUSTED_OBSERVATIONS:
+        logger.info(f"[PROFILE SHIELD] Rejected profile update: High trust observation count {high_trust_count} < {MIN_TRUSTED_OBSERVATIONS}")
+        return None
+
+    logger.info(f"[PROFILE UPDATE] Multi-factor criteria satisfied. Updating profile baseline for student {student_id}...")
     return crud.update_behavior_profile(
         db=db,
         profile=profile,

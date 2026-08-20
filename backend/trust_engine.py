@@ -70,13 +70,14 @@ def calculate_trust_score(
 
 
 
-def update_security_state(session: dict, trust_score: float) -> str:
+def update_security_state(session: dict, trust_score: float, adaptive_threshold: float = TRUST_THRESHOLD) -> str:
     """
     Enforces security state transitions with hysteresis:
     NORMAL -> SUSPICIOUS -> HIGH_RISK -> LOCKED
 
-    - 3 consecutive low trust scores (< 50) trigger escalation.
-    - 2 consecutive high trust scores (>= 50) trigger de-escalation.
+    - Low-trust violations (trust_score < adaptive_threshold) increment low_trust_count.
+    - 3 consecutive low-trust violations trigger state escalation.
+    - 2 consecutive high-trust observations (trust_score >= adaptive_threshold) trigger de-escalation.
     - Bot detections (trust score == 0.0) trigger immediate LOCK.
     - LOCKED state requires manual override/reset and cannot recover.
     """
@@ -94,7 +95,9 @@ def update_security_state(session: dict, trust_score: float) -> str:
         session["high_trust_count"] = 0
         return "LOCKED"
 
-    if trust_score < TRUST_THRESHOLD:
+    threshold = adaptive_threshold if adaptive_threshold is not None else TRUST_THRESHOLD
+
+    if trust_score < threshold:
         low_trust_count += 1
         high_trust_count = 0
         
@@ -125,6 +128,7 @@ def update_security_state(session: dict, trust_score: float) -> str:
     session["low_trust_count"] = low_trust_count
     session["high_trust_count"] = high_trust_count
     return current_state
+
 
 
 

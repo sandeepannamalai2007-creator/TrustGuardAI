@@ -15,15 +15,21 @@ SCALER_PATH = os.path.join(BASE_DIR, "scaler.pkl")
 model = None
 scaler = None
 
-try:
+def reload_model():
+    """
+    Hot-reloads model and scaler from disk.
+    """
+    global model, scaler
     if os.path.exists(MODEL_PATH) and os.path.exists(SCALER_PATH):
         model = joblib.load(MODEL_PATH)
         scaler = joblib.load(SCALER_PATH)
-        logger.info("✅ TrustGuard AI model loaded successfully.")
-    else:
-        logger.warning("⚠️ Model or Scaler file not found. Fallback mode active.")
+        logger.info("✅ TrustGuard AI model hot-reloaded successfully.")
+
+try:
+    reload_model()
 except (OSError, FileNotFoundError, ValueError) as e:
     logger.error(f"❌ Failed to load ML model: {e}")
+
 
 DECISION_SCORE_MIN = -0.3
 DECISION_SCORE_MAX = 0.3

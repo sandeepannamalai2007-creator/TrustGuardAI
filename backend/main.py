@@ -193,26 +193,13 @@ def _process_biometric_evaluation(db: Session, student, request: FeatureRequest)
 
         logger.debug(f"Similarity Score: {similarity_score}")
         trust_score = calculate_trust_score(request.model_dump(), similarity_score)
-
-        if trust_score >= 50:
-            logger.info("Updating profile with trusted sample...")
-            update_student_profile(
-                db=db,
-                student_id=student.id,
-                avg_dwell_time=request.avg_dwell_time_ms,
-                avg_flight_time=request.avg_flight_time_ms,
-                typing_speed=request.typing_speed_cps,
-                mouse_velocity=request.avg_mouse_velocity_px_s
-            )
-            logger.info("Profile updated.")
-        else:
-            logger.info(f"Skipping profile update: trust score {trust_score}% is below threshold.")
     else:
         trust_score = 100.0
         if not has_typing_data:
             explanations = ["Bypassed validation: No typing data collected during window."]
 
     return trust_score, similarity_score, explanations
+
 
 def _log_security_audit(db: Session, session_id: str, trust_score: float, similarity_score: float, request: FeatureRequest):
     crud.create_trust_log(
@@ -270,7 +257,24 @@ def receive_features(
 
     trust_score, similarity_score, explanations = _process_biometric_evaluation(db, student, request)
     metrics_collector.record_trust_score(trust_score)
-    new_state = update_security_state(session, trust_score)
+    new_state = update_security_state(session, trust_score, adaptive_threshold=adaptive_t)
+
+    # Attempt baseline adaptation (enforces high trust, high similarity, normal state, and observation count)
+    if student:
+        update_student_profile(
+            db=db,
+            student_id=student.id,
+            avg_dwell_time=request.avg_dwell_time_ms,
+            avg_flight_time=request.avg_flight_time_ms,
+            typing_speed=request.typing_speed_cps,
+            mouse_velocity=request.avg_mouse_velocity_px_s,
+            trust_score=trust_score,
+            similarity_score=similarity_score,
+            security_state=new_state,
+            high_trust_count=session.get("high_trust_count", 0)
+        )
+
+
 
     step_up = is_step_up_required(session)
     save_session(request.session_id, session)
