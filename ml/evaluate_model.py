@@ -35,6 +35,7 @@ import numpy as np
 import pandas as pd
 from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import StandardScaler
+from sklearn.svm import OneClassSVM
 
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -232,13 +233,14 @@ def run_single_model_evaluation(subject_data, feature_indices, clf, scaler, p_mi
     tn = np.sum(all_impostor_scores < op_threshold)
     fp = np.sum(all_impostor_scores >= op_threshold)
 
-    far_op = (fp / num_impostor) * 100.0
-    frr_op = (fn / num_genuine) * 100.0
+    far_op = (fp / num_impostor) * 100.0 if num_impostor > 0 else 0.0
+    frr_op = (fn / num_genuine) * 100.0 if num_genuine > 0 else 0.0
     precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
     recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
     f1_score = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
 
     return {
+
         "model_label": model_label,
         "num_subjects": len(subjects),
         "num_genuine": num_genuine,
@@ -262,7 +264,151 @@ def run_single_model_evaluation(subject_data, feature_indices, clf, scaler, p_mi
     }
 
 
+def evaluate_model_architectures(subject_data):
+
+    """
+    Scientific Architecture Comparison (Item 3 & User Request):
+    Evaluates where discrimination is lost across identity verification paradigms:
+    - Model A: Unsupervised Isolation Forest (Global Anomaly Detection)
+    - Model B: Personal Mahalanobis Distance Profile (Biometric Identity Matching)
+    - Model C: Hybrid Trust Score (Isolation Forest 70% + Mahalanobis 30%)
+    - Model D: Per-Subject One-Class SVM (Personalized Supervised Biometric Model)
+    """
+    subjects = list(subject_data.keys())
+    indices = [0, 1, 2, 4]  # 4D Core Keystroke Telemetry
+    scaler = StandardScaler()
+    
+    # Train global Isolation Forest for Model A
+    all_train = np.vstack([m[:200, indices] for m in subject_data.values()])
+    scaler.fit(all_train)
+    iso_clf = IsolationForest(n_estimators=100, contamination=0.05, random_state=42)
+    iso_clf.fit(scaler.transform(all_train))
+    raw_train_scores = iso_clf.decision_function(scaler.transform(all_train))
+    p_min = float(np.percentile(raw_train_scores, 5))
+    p_max = float(np.percentile(raw_train_scores, 95))
+    scale = max(p_max - p_min, 1e-4)
+
+    scores_dict = {
+        "Model A: Isolation Forest (Global Anomaly)": {"gen": [], "imp": []},
+        "Model B: Mahalanobis Distance (Identity Profile)": {"gen": [], "imp": []},
+        "Model C: Hybrid Pipeline (IF 70% + Mahalanobis 30%)": {"gen": [], "imp": []},
+        "Model D: One-Class SVM (Per-Subject Identity Model)": {"gen": [], "imp": []}
+    }
+
+    for sub in subjects:
+        data = subject_data[sub]
+        if len(data) < 400:
+            continue
+        
+        enroll = data[:200, indices]
+        gen_test = data[200:400, indices]
+        
+        other_subs = [s for s in subjects if s != sub]
+        imp_test = np.vstack([subject_data[osub][200:204, indices] for osub in other_subs])
+        
+        # 1. Model B: Mahalanobis Distance
+        mu = np.mean(enroll, axis=0)
+        cov = np.cov(enroll, rowvar=False) + np.eye(len(indices)) * 1e-4
+        cov_inv = np.linalg.inv(cov)
+        
+        diff_gen = gen_test - mu
+        dm_gen = np.sqrt(np.maximum(np.sum((diff_gen @ cov_inv) * diff_gen, axis=1), 0.0))
+        sim_gen = np.clip(np.exp(-dm_gen / float(len(indices))) * 100.0, 0.0, 100.0)
+
+        diff_imp = imp_test - mu
+        dm_imp = np.sqrt(np.maximum(np.sum((diff_imp @ cov_inv) * diff_imp, axis=1), 0.0))
+        sim_imp = np.clip(np.exp(-dm_imp / float(len(indices))) * 100.0, 0.0, 100.0)
+
+        # 2. Model A: Isolation Forest
+        gen_scaled = scaler.transform(gen_test)
+        imp_scaled = scaler.transform(imp_test)
+        raw_gen_if = iso_clf.decision_function(gen_scaled)
+        raw_imp_if = iso_clf.decision_function(imp_scaled)
+        
+        if_gen = np.clip(((raw_gen_if - p_min) / scale) * 100.0, 0.0, 100.0)
+        if_imp = np.clip(((raw_imp_if - p_min) / scale) * 100.0, 0.0, 100.0)
+
+        # 3. Model C: Hybrid Score
+        hyb_gen = 0.7 * if_gen + 0.3 * sim_gen
+        hyb_imp = 0.7 * if_imp + 0.3 * sim_imp
+
+        # 4. Model D: Per-Subject One-Class SVM
+        ocsvm = OneClassSVM(kernel='rbf', gamma='scale', nu=0.05)
+        scaler_sub = StandardScaler()
+        enroll_sub_scaled = scaler_sub.fit_transform(enroll)
+        ocsvm.fit(enroll_sub_scaled)
+        
+        raw_svm_gen = ocsvm.decision_function(scaler_sub.transform(gen_test))
+        raw_svm_imp = ocsvm.decision_function(scaler_sub.transform(imp_test))
+        
+        train_svm_scores = ocsvm.decision_function(enroll_sub_scaled)
+        svm_pmin = float(np.percentile(train_svm_scores, 5))
+        svm_pmax = float(np.percentile(train_svm_scores, 95))
+        svm_scale = max(svm_pmax - svm_pmin, 1e-4)
+
+        svm_gen = np.clip(((raw_svm_gen - svm_pmin) / svm_scale) * 100.0, 0.0, 100.0)
+        svm_imp = np.clip(((raw_svm_imp - svm_pmin) / svm_scale) * 100.0, 0.0, 100.0)
+
+        scores_dict["Model A: Isolation Forest (Global Anomaly)"]["gen"].extend(if_gen)
+        scores_dict["Model A: Isolation Forest (Global Anomaly)"]["imp"].extend(if_imp)
+        
+        scores_dict["Model B: Mahalanobis Distance (Identity Profile)"]["gen"].extend(sim_gen)
+        scores_dict["Model B: Mahalanobis Distance (Identity Profile)"]["imp"].extend(sim_imp)
+
+        scores_dict["Model C: Hybrid Pipeline (IF 70% + Mahalanobis 30%)"]["gen"].extend(hyb_gen)
+        scores_dict["Model C: Hybrid Pipeline (IF 70% + Mahalanobis 30%)"]["imp"].extend(hyb_imp)
+
+        scores_dict["Model D: One-Class SVM (Per-Subject Identity Model)"]["gen"].extend(svm_gen)
+        scores_dict["Model D: One-Class SVM (Per-Subject Identity Model)"]["imp"].extend(svm_imp)
+
+    results_table = []
+    thresholds = np.linspace(0.0, 100.0, 201)
+
+    for name, s_data in scores_dict.items():
+        gen_arr = np.array(s_data["gen"])
+        imp_arr = np.array(s_data["imp"])
+        
+        far_list, frr_list, tpr_list, fpr_list = [], [], [], []
+        min_diff, eer_val = 1.0, 0.0
+
+        for T in thresholds:
+            far = np.mean(imp_arr >= T)
+            frr = np.mean(gen_arr < T)
+            far_list.append(far)
+            frr_list.append(frr)
+            tpr_list.append(1.0 - frr)
+            fpr_list.append(far)
+
+            diff = abs(far - frr)
+            if diff < min_diff:
+                min_diff = diff
+                eer_val = (far + frr) / 2.0
+
+        sorted_idx = np.argsort(fpr_list)
+        sorted_fpr = np.array(fpr_list)[sorted_idx]
+        sorted_tpr = np.array(tpr_list)[sorted_idx]
+        if hasattr(np, "trapezoid"):
+            auc_val = float(np.trapezoid(sorted_tpr, sorted_fpr))
+        else:
+            auc_val = float(np.sum(np.diff(sorted_fpr) * (sorted_tpr[1:] + sorted_tpr[:-1]) / 2.0))
+
+        op_T = 50.0
+        far_50 = float(np.mean(imp_arr >= op_T) * 100.0)
+        frr_50 = float(np.mean(gen_arr < op_T) * 100.0)
+
+        results_table.append({
+            "model": name,
+            "eer_percent": round(eer_val * 100.0, 2),
+            "far_50": round(far_50, 2),
+            "frr_50": round(frr_50, 2),
+            "auc": round(auc_val, 4)
+        })
+
+    return results_table
+
+
 def generate_evaluation_plots(eval_results, output_dir):
+
     """
     Generates 4 publication-quality evaluation figures in output_dir:
     1. roc_curve.png
@@ -455,21 +601,22 @@ def evaluate_biometric_performance():
     logger.info(f"Script Bot Evasion FAR         : {bot_far:.2f}% (Blocked: {100 - bot_far:.2f}%)")
     logger.info(f"Erratic Attacker Evasion FAR    : {erratic_far:.2f}% (Blocked: {100 - erratic_far:.2f}%)")
 
-    # Scientific Model Comparison Table (Points 1 & 2)
+    # Scientific Model Architecture Comparison (Models A, B, C, D)
     logger.info("\n" + "=" * 80)
-    logger.info("  SCIENTIFIC MODEL COMPARISON TABLE (Retrained Isolation Forests)")
+    logger.info("  IDENTITY VERIFICATION ARCHITECTURE COMPARISON (Models A, B, C, D)")
     logger.info("=" * 80)
-    logger.info(f"{'Version':<35} | {'EER (%)':<8} | {'FAR (%)':<8} | {'FRR (%)':<8} | {'AUC':<6}")
+    arch_results = evaluate_model_architectures(subject_data)
+    logger.info(f"{'Architecture Model':<50} | {'EER (%)':<8} | {'FAR@50':<8} | {'FRR@50':<8} | {'AUC':<6}")
     logger.info("-" * 80)
-    for res in exp_results:
-        logger.info(f"{res['model_label']:<35} | {res['eer_percent']:<8} | {res['far_operating']:<8} | {res['frr_operating']:<8} | {res['auc']:<6}")
-    logger.info(f"{final_res['model_label']:<35} | {final_res['eer_percent']:<8} | {final_res['far_operating']:<8} | {final_res['frr_operating']:<8} | {final_res['auc']:<6}")
+    for arch in arch_results:
+        logger.info(f"{arch['model']:<50} | {arch['eer_percent']:<8} | {arch['far_50']:<8} | {arch['frr_50']:<8} | {arch['auc']:<6}")
     logger.info("=" * 80)
 
     # Master Report Log
     logger.info("\n" + "=" * 80)
     logger.info("  MASTER MULTI-SUBJECT BIOMETRIC PERFORMANCE REPORT")
     logger.info("=" * 80)
+
     logger.info(f"Number of Subjects Evaluated : {final_res['num_subjects']}")
     logger.info(f"Total Genuine Test Samples   : {final_res['num_genuine']}")
     logger.info(f"Total Impostor Test Samples  : {final_res['num_impostor']}")

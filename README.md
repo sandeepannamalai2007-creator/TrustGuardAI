@@ -54,31 +54,21 @@ graph TD
 
 ---
 
-## 📊 Model Performance & Biometric Evaluation
+## 📊 Model Performance & Biometric Architecture Comparison
 
-TrustGuard AI evaluates machine learning performance using a **Session-Disjoint Genuine Testing + Cross-Subject Impostor Evaluation** protocol across all 51 subjects in the CMU Keystroke Dynamics Benchmark Dataset (20,400 total test trials), strictly separated from automated evasion bot stress testing:
+TrustGuard AI evaluates machine learning performance using a **Session-Disjoint Genuine Testing + Cross-Subject Impostor Evaluation** protocol across all 51 subjects in the CMU Keystroke Dynamics Benchmark Dataset (20,400 total test trials).
 
-### 1. 🔬 Scientific Model Comparison Table
-| Version | Feature Vector | EER (%) | FAR (@ T=85%) | FRR (@ T=85%) | ROC-AUC |
+### 🔬 Identity Verification Architecture Comparison (Models A, B, C, D)
+| Architecture Model | Primary Mechanism | EER (%) | FAR (@ T=50) | FRR (@ T=50) | ROC-AUC |
 | :--- | :--- | :---: | :---: | :---: | :---: |
-| **Baseline** | Dwell, Flight, Speed Averages | 26.63% | 26.63% | 26.63% | 0.8049 |
-| **V2 (+ Rhythm)** | + Dwell/Flight Ratio & Pause Frequency | 25.05% | 25.05% | 25.05% | 0.8158 |
-| **Selected Final** | **4D Keystroke + Mahalanobis Profile Matcher** | **`23.33%`** | **`23.33%`** | **`23.33%`** | **`0.8394`** |
+| **Model A: Isolation Forest** | Unsupervised Global Anomaly Detection | 53.43% | 75.00% | 31.98% | 0.4547 |
+| **Model B: Mahalanobis Distance** | Personalized Biometric Identity Profile | **26.60%** | **22.47%** | **33.62%** | **0.8092** |
+| **Model C: Hybrid Pipeline** | Isolation Forest (70%) + Mahalanobis (30%) | 47.11% | 65.15% | 30.76% | 0.5502 |
+| **Model D: One-Class SVM** | Per-Subject Personalized Identity Model | 30.52% | **10.89%** | 63.21% | 0.7036 |
 
-### 2. 🧬 Session-Disjoint Genuine Testing + Cross-Subject Impostor Evaluation
-```
-Evaluation Metrics (CMU Keystroke Dynamics Benchmark)
-──────────────────────────────────────────────────────────────────────────
-Subjects Evaluated           : 51
-Genuine Test Samples         : 10,200 (Sessions 26-50, Unseen)
-Impostor Test Samples        : 10,200 (Cross-Subject)
+> 💡 **Key Scientific Insight**: Standard unsupervised Isolation Forest alone achieves near-random discrimination ($\text{EER} \approx 53.43\%$, $\text{AUC} = 0.4547$) because it is designed to detect generic outliers across humans rather than individual identity. In contrast, personalized identity-matching architectures like **Mahalanobis Distance Biometric Profiles** ($\text{AUC} = 0.8092$) and **Per-Subject One-Class SVMs** ($\text{FAR} = 10.89\%$) provide the necessary discrimination for genuine identity verification.
 
-Equal Error Rate (EER)       : 23.33% (at Operating Threshold T = 85.0%)
-ROC Area Under Curve (AUC)   : 0.8394
-──────────────────────────────────────────────────────────────────────────
-```
-
-### 3. 🛡️ Adversarial Stress Testing (Bot Evasion & Poisoning Defense)
+### 🛡️ Adversarial Stress Testing (Bot Evasion & Poisoning Defense)
 ```
 Adversarial & Poisoning Defense
 ──────────────────────────────────────────────────────────────────────────
@@ -89,6 +79,7 @@ Profile Poisoning Resistance : 100.00% (Shielded via Multi-Factor Criteria & 10%
 ```
 
 > Detailed methodologies, mathematical derivations, and limitation analyses are documented in [`docs/ML_EVALUATION.md`](docs/ML_EVALUATION.md). Generated evaluation plots are stored in [`ml/evaluation_results/`](ml/evaluation_results/).
+
 
 
 
