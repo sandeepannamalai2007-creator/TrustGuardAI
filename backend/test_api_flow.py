@@ -16,7 +16,7 @@ def test_api_session_flow(client):
     access_token = data["access_token"]
     headers = {"Authorization": f"Bearer {access_token}"}
 
-    # 2. Send features (typing data)
+    # 2. Send features (typing data) - Sample 1/5 returns status="enrolling"
     feature_data = {
         "session_id": session_id,
         "avg_dwell_time_ms": 120.0,
@@ -33,10 +33,19 @@ def test_api_session_flow(client):
     response = client.post("/session/features", json=feature_data, headers=headers)
     assert response.status_code == 200
     data = response.json()
+    assert data["status"] == "enrolling"
+
+
+    # Send features 4 more times to complete 5-sample enrollment phase
+    for _ in range(4):
+        response = client.post("/session/features", json=feature_data, headers=headers)
+        assert response.status_code == 200
+
+    data = response.json()
     assert data["trust_score"] > 0
     assert data["status"] == "success"
 
-    # 3. Send features (No typing data - testing default 100% bypass)
+    # 3. Send features (No typing data - testing explicit insufficient_data status)
     feature_data_no_type = {
         "session_id": session_id,
         "avg_dwell_time_ms": 0.0,
@@ -44,8 +53,8 @@ def test_api_session_flow(client):
         "avg_flight_time_ms": 0.0,
         "std_flight_time_ms": 0.0,
         "typing_speed_cps": 0.0,
-        "avg_mouse_velocity_px_s": 120.0,
-        "click_count": 2,
+        "avg_mouse_velocity_px_s": 0.0,
+        "click_count": 0,
         "keystroke_count": 0,
         "session_duration_s": 10.0
     }
@@ -53,7 +62,8 @@ def test_api_session_flow(client):
     response = client.post("/session/features", json=feature_data_no_type, headers=headers)
     assert response.status_code == 200
     data = response.json()
-    assert data["trust_score"] == 100.0
+    assert data["status"] == "insufficient_data"
+
 
     # 4. Send features without Auth Header -> Expect 401 Unauthorized
     unauth_response = client.post("/session/features", json=feature_data_no_type)

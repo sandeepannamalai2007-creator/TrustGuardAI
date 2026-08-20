@@ -38,6 +38,7 @@ from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 from trust_engine import (
     calculate_trust_score,
+    has_usable_biometric_signal,
     is_step_up_required,
     update_security_state,
 )
@@ -257,8 +258,7 @@ def receive_features(
 
     session = get_session(request.session_id)
 
-    has_typing_data = (request.keystroke_count >= 5) or (request.avg_dwell_time_ms > 0)
-    if not has_typing_data and request.click_count == 0:
+    if not has_usable_biometric_signal(request.model_dump()):
         last_score = session.get("last_trust_score", 50.0)
         return FeatureResponse(
             status="insufficient_data",
@@ -269,9 +269,37 @@ def receive_features(
         )
 
 
+
     session["last_trust_score"] = session.get("last_trust_score", 50.0)
     student = crud.get_student(db, session["user_id"])
     profile = crud.get_behavior_profile(db, student.id) if student else None
+
+    # Handle NEW / ENROLLING profile lifecycle phase
+    if student and (profile is None or profile.enrollment_status == "ENROLLING"):
+        updated_profile = update_student_profile(
+            db=db,
+            student_id=student.id,
+            avg_dwell_time=request.avg_dwell_time_ms,
+            avg_flight_time=request.avg_flight_time_ms,
+            typing_speed=request.typing_speed_cps,
+            mouse_velocity=request.avg_mouse_velocity_px_s,
+            trust_score=100.0,
+            similarity_score=100.0,
+            security_state="NORMAL",
+            high_trust_count=3
+        )
+        cnt = updated_profile.enrollment_count if updated_profile else 1
+        status_str = updated_profile.enrollment_status if updated_profile else "ENROLLING"
+        if status_str == "ENROLLING":
+            save_session(request.session_id, session)
+            return FeatureResponse(
+                status="enrolling",
+                message=f"Enrollment in progress (Sample {cnt}/5). Establishing behavioral baseline.",
+                trust_score=100.0,
+                security_state="NORMAL",
+                explanations=[f"Enrollment phase active: {cnt}/5 trusted observation windows collected."]
+            )
+
     adaptive_t = compute_adaptive_threshold(db, profile) if profile else 50.0
 
     trust_score, similarity_score, explanations = _process_biometric_evaluation(db, student, request)
@@ -280,7 +308,7 @@ def receive_features(
     new_state = update_security_state(session, trust_score, adaptive_threshold=adaptive_t)
 
     # Attempt baseline adaptation (enforces high trust, high similarity, normal state, and observation count)
-    if student and has_typing_data:
+    if student:
         update_student_profile(
             db=db,
             student_id=student.id,
@@ -298,6 +326,7 @@ def receive_features(
     save_session(request.session_id, session)
 
     _log_security_audit(db, session["exam_session_id"], trust_score, similarity_score, request)
+
 
 
     return FeatureResponse(

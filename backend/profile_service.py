@@ -36,7 +36,7 @@ def update_student_profile(
 
     if profile is None:
         # Initialize initial baseline profile
-        logger.info(f"[PROFILE INIT] Establishing baseline profile for student {student_id}")
+        logger.info(f"[PROFILE INIT] Establishing initial enrollment profile for student {student_id}")
         return crud.create_behavior_profile(
             db=db,
             student_id=student_id,
@@ -46,7 +46,19 @@ def update_student_profile(
             mouse_velocity=mouse_velocity
         )
 
-    # Validate multi-factor criteria for baseline update (Poisoning Resistance)
+    # During ENROLLING phase (N < 5), accumulate baseline samples without enforcing poisoning checks
+    if profile.enrollment_status == "ENROLLING":
+        logger.info(f"[ENROLLMENT ACCUMULATE] Adding enrollment sample {profile.enrollment_count + 1}/5 for student {student_id}")
+        return crud.update_behavior_profile(
+            db=db,
+            profile=profile,
+            avg_dwell_time=avg_dwell_time,
+            avg_flight_time=avg_flight_time,
+            typing_speed=typing_speed,
+            mouse_velocity=mouse_velocity
+        )
+
+    # Once BASELINE_READY or AUTHENTICATING, validate multi-factor criteria for baseline update (Poisoning Resistance)
     if trust_score < MIN_TRUST_SCORE:
         logger.info(f"[PROFILE SHIELD] Rejected profile update: Trust score {trust_score:.1f}% < {MIN_TRUST_SCORE:.1f}%")
         return None
@@ -62,6 +74,7 @@ def update_student_profile(
     if high_trust_count < MIN_TRUSTED_OBSERVATIONS:
         logger.info(f"[PROFILE SHIELD] Rejected profile update: High trust observation count {high_trust_count} < {MIN_TRUSTED_OBSERVATIONS}")
         return None
+
 
     logger.info(f"[PROFILE UPDATE] Multi-factor criteria satisfied. Updating profile baseline for student {student_id}...")
     return crud.update_behavior_profile(

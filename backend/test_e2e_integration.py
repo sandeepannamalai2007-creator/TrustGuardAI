@@ -40,12 +40,16 @@ def test_e2e_full_session_flow():
         "session_duration_s": 10.0
     }
     headers = {"Authorization": f"Bearer {access_token}"}
-    feat_resp = client.post("/session/features", json=feature_payload, headers=headers)
-    assert feat_resp.status_code == 200
+    # Post features 5 times to complete 5-sample enrollment phase
+    for _ in range(5):
+        feat_resp = client.post("/session/features", json=feature_payload, headers=headers)
+        assert feat_resp.status_code == 200
+
     feat_data = feat_resp.json()
     assert feat_data["status"] == "success"
     assert "trust_score" in feat_data
     assert "security_state" in feat_data
+
 
     # Step 3: Verify Unauthenticated Request Rejection (401)
     unauth_resp = client.post("/session/features", json=feature_payload)

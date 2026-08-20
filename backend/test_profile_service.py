@@ -24,7 +24,7 @@ def test_profile_lifecycle():
             db.delete(profile)
             db.commit()
 
-        # 2. Test create profile
+        # 2. Test create profile (Sample 1/5)
         profile = profile_service.update_student_profile(
             db=db,
             student_id=student.id,
@@ -39,8 +39,9 @@ def test_profile_lifecycle():
         assert profile.typing_speed == 5.0
         assert profile.mouse_velocity == 200.0
         assert profile.sample_count == 1
+        assert profile.enrollment_status == "ENROLLING"
 
-        # 3. Test capped drift updating
+        # 3. Test capped drift updating during enrollment
         # We send a huge jump (300.0 ms dwell). Capping limits it to 10% (100.0 + 10.0 = 110.0 ms).
         # When combined with the first sample (100.0), the mean becomes: (100.0 * 1 + 110.0) / 2 = 105.0 ms
         updated_profile = profile_service.update_student_profile(
@@ -53,6 +54,8 @@ def test_profile_lifecycle():
         )
         assert updated_profile.sample_count == 2
         assert updated_profile.avg_dwell_time == 105.0 # (100 + 110) / 2
+        assert updated_profile.enrollment_status == "ENROLLING"
+
         
     finally:
         db.close()

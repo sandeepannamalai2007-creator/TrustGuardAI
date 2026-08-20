@@ -102,29 +102,35 @@ def load_and_preprocess_cmu_dataset():
 def train_variant_isolation_forest(subject_data, feature_indices):
     """
     Retrains a dedicated IsolationForest and StandardScaler for a specific feature subset.
+    Calculates empirical p5 and p95 decision score bounds from training data for distribution calibration.
     """
     all_enrollment_samples = []
     for matrix in subject_data.values():
         all_enrollment_samples.append(matrix[:200, feature_indices])
     train_X = np.vstack(all_enrollment_samples)
 
-    
     scaler = StandardScaler()
     scaled_X = scaler.fit_transform(train_X)
-    
+
     clf = IsolationForest(n_estimators=100, contamination=0.05, random_state=42)
     clf.fit(scaled_X)
-    
-    return clf, scaler
+
+    # Empirical Score Calibration (Point 4): Compute p5 and p95 percentiles from genuine training scores
+    train_raw_scores = clf.decision_function(scaled_X)
+    p_min = float(np.percentile(train_raw_scores, 5))
+    p_max = float(np.percentile(train_raw_scores, 95))
+
+    return clf, scaler, p_min, p_max
 
 
-def run_single_model_evaluation(subject_data, feature_indices, clf, scaler, model_label="Baseline"):
+def run_single_model_evaluation(subject_data, feature_indices, clf, scaler, p_min, p_max, model_label="Baseline"):
     """
-    Executes Session-Disjoint Genuine Testing + Cross-Subject Impostor Evaluation using a RETRAINED Isolation Forest model.
+    Executes Session-Disjoint Genuine Testing + Cross-Subject Impostor Evaluation using empirical percentile calibration.
     """
     subjects = list(subject_data.keys())
     all_genuine_scores = []
     all_impostor_scores = []
+    scale = max(p_max - p_min, 1e-4)
 
     for sub in subjects:
         data = subject_data[sub]
@@ -144,8 +150,8 @@ def run_single_model_evaluation(subject_data, feature_indices, clf, scaler, mode
         gen_scaled = scaler.transform(gen_features)
         raw_scores_gen = clf.decision_function(gen_scaled)
         
-        # Convert decision scores (-0.3 to +0.3) to 0-100 ML scores
-        ml_scores_gen = np.clip(((raw_scores_gen + 0.3) / 0.6) * 100.0, 0.0, 100.0)
+        # Distribution-calibrated trust scores using empirical p5 and p95 bounds
+        ml_scores_gen = np.clip(((raw_scores_gen - p_min) / scale) * 100.0, 0.0, 100.0)
         
         diff_gen = gen_features - mu
         dm2_gen = np.sum((diff_gen @ cov_inv) * diff_gen, axis=1)
@@ -168,7 +174,8 @@ def run_single_model_evaluation(subject_data, feature_indices, clf, scaler, mode
         imp_features = impostor_matrix[:, feature_indices]
         imp_scaled = scaler.transform(imp_features)
         raw_scores_imp = clf.decision_function(imp_scaled)
-        ml_scores_imp = np.clip(((raw_scores_imp + 0.3) / 0.6) * 100.0, 0.0, 100.0)
+        ml_scores_imp = np.clip(((raw_scores_imp - p_min) / scale) * 100.0, 0.0, 100.0)
+
         
         diff_imp = imp_features - mu
         dm2_imp = np.sum((diff_imp @ cov_inv) * diff_imp, axis=1)
@@ -346,18 +353,19 @@ def evaluate_biometric_performance():
     if not subject_data:
         return
 
-    # Scientific Retrained Model Ablation Experiments (Points 1 & 2)
+    # Scientific Retrained Model Ablation Experiments (Points 1 & 3)
     feature_experiments = [
-        {"indices": [0, 1, 2, 4], "name": "Baseline (4D Keystroke Vector)"},
-        {"indices": [0, 1, 2, 3, 4, 5, 6], "name": "V2 (+ Rhythm & Pause Frequency)"}
+        {"indices": [0, 1, 2, 4], "name": "Variant 1: Baseline (4D Production Candidate)"},
+        {"indices": [0, 1, 2, 3, 4, 5, 6], "name": "Variant 2: Experimental (+ Rhythm/Pause)"}
     ]
 
     exp_results = []
     for exp in feature_experiments:
         logger.info(f"\nRetraining Isolation Forest for experiment: {exp['name']}...")
-        clf, scaler = train_variant_isolation_forest(subject_data, exp["indices"])
-        res = run_single_model_evaluation(subject_data, exp["indices"], clf, scaler, model_label=exp["name"])
+        clf, scaler, p_min, p_max = train_variant_isolation_forest(subject_data, exp["indices"])
+        res = run_single_model_evaluation(subject_data, exp["indices"], clf, scaler, p_min, p_max, model_label=exp["name"])
         exp_results.append(res)
+
 
     # Select the model with the lowest EER / highest AUC
     best_res = min(exp_results, key=lambda r: (r["eer_percent"], -r["auc"]))

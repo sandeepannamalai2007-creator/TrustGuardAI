@@ -9,7 +9,21 @@ logger = logging.getLogger(__name__)
 BOT_STD_THRESHOLD = 2.0
 AI_WEIGHT = 0.7
 SIMILARITY_WEIGHT = 0.3
-MIN_KEYSTROKES_FOR_AI = 5
+MIN_KEYSTROKES_FOR_BIOMETRICS = 5
+
+
+def has_usable_biometric_signal(features: dict) -> bool:
+    """
+    Centralized definition of usable biometric signal across all system components.
+    Requires at least MIN_KEYSTROKES_FOR_BIOMETRICS (5) AND non-zero dwell time.
+    """
+    if not features:
+        return False
+    keystroke_count = features.get("keystroke_count", 0)
+    avg_dwell = features.get("avg_dwell_time_ms", 0.0)
+    return keystroke_count >= MIN_KEYSTROKES_FOR_BIOMETRICS and avg_dwell > 0.0
+
+
 ESCALATION_THRESHOLD = 3
 DEESCALATION_THRESHOLD = 2
 TRUST_THRESHOLD = 50
@@ -39,10 +53,9 @@ def calculate_trust_score(
     2. Behaviour profile similarity
     3. Shannon entropy and micro-variance bot checks
     """
-    keystroke_count = features.get("keystroke_count", 0)
     entropy_penalty = 1.0
 
-    if keystroke_count >= MIN_KEYSTROKES_FOR_AI:
+    if has_usable_biometric_signal(features):
         std_dwell = features.get("std_dwell_time_ms", 0.0)
         std_flight = features.get("std_flight_time_ms", 0.0)
         avg_dwell = features.get("avg_dwell_time_ms", 0.0)
@@ -67,6 +80,7 @@ def calculate_trust_score(
     ) * entropy_penalty
 
     return round(final_score, 2)
+
 
 
 

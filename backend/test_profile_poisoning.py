@@ -26,19 +26,22 @@ def test_profile_poisoning_resistance():
             db.delete(profile)
             db.commit()
 
-        # Initialize Profile with 100.0ms dwell time baseline
-        updated_init = update_student_profile(
-            db=db,
-            student_id=student.id,
-            avg_dwell_time=100.0,
-            avg_flight_time=150.0,
-            typing_speed=4.5,
-            mouse_velocity=200.0
-        )
-        assert updated_init is not None
+        # Complete 5 Enrollment Windows to establish baseline (100.0ms dwell time)
+        for _ in range(5):
+            updated_init = update_student_profile(
+                db=db,
+                student_id=student.id,
+                avg_dwell_time=100.0,
+                avg_flight_time=150.0,
+                typing_speed=4.5,
+                mouse_velocity=200.0
+            )
+            assert updated_init is not None
 
         init_profile = crud.get_behavior_profile(db, student.id)
+        assert init_profile.enrollment_status == "BASELINE_READY"
         assert init_profile.avg_dwell_time == pytest.approx(100.0, abs=1e-2)
+
 
         # 2. Simulate Attacker attempting to inject poisoned samples (350.0ms dwell time)
         # Attempt 1: Low similarity score (20%) + Low Trust (30%) -> SHIELDED
