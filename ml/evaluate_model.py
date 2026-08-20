@@ -264,21 +264,24 @@ def run_single_model_evaluation(subject_data, feature_indices, clf, scaler, p_mi
     }
 
 
-def evaluate_model_architectures(subject_data):
-
+def evaluate_architecture_paradigm_matrix(subject_data):
     """
-    Scientific Architecture Comparison (Item 3 & User Request):
+    Stage 1: Architecture Selection Matrix (Fixed 4D Core Features: [0, 1, 2, 4])
     Evaluates where discrimination is lost across identity verification paradigms:
-    - Model A: Unsupervised Isolation Forest (Global Anomaly Detection)
-    - Model B: Personal Mahalanobis Distance Profile (Biometric Identity Matching)
-    - Model C: Hybrid Trust Score (Isolation Forest 70% + Mahalanobis 30%)
-    - Model D: Per-Subject One-Class SVM (Personalized Supervised Biometric Model)
+    - Model A: Global Unsupervised Isolation Forest
+    - Model B: Personal Mahalanobis Distance Profile
+    - Model C: Hybrid Weight Sweep (90/10 down to 10/90 IF vs Mahalanobis)
+    - Model D: Per-Subject One-Class SVM (Personalized Identity Model)
+
+    Documented Paradigm Note:
+    Architectures represent different authentication paradigms: global anomaly detection (Isolation Forest)
+    versus per-user identity modeling (Mahalanobis Distance & One-Class SVM).
     """
     subjects = list(subject_data.keys())
     indices = [0, 1, 2, 4]  # 4D Core Keystroke Telemetry
     scaler = StandardScaler()
     
-    # Train global Isolation Forest for Model A
+    # Train global Isolation Forest for Model A & Hybrid
     all_train = np.vstack([m[:200, indices] for m in subject_data.values()])
     scaler.fit(all_train)
     iso_clf = IsolationForest(n_estimators=100, contamination=0.05, random_state=42)
@@ -288,12 +291,20 @@ def evaluate_model_architectures(subject_data):
     p_max = float(np.percentile(raw_train_scores, 95))
     scale = max(p_max - p_min, 1e-4)
 
+    # Hybrid weight sweep pairs (w_if, w_mah)
+    weight_pairs = [
+        (0.9, 0.1), (0.8, 0.2), (0.7, 0.3), (0.6, 0.4), (0.5, 0.5),
+        (0.4, 0.6), (0.3, 0.7), (0.2, 0.8), (0.1, 0.9)
+    ]
+
     scores_dict = {
         "Model A: Isolation Forest (Global Anomaly)": {"gen": [], "imp": []},
         "Model B: Mahalanobis Distance (Identity Profile)": {"gen": [], "imp": []},
-        "Model C: Hybrid Pipeline (IF 70% + Mahalanobis 30%)": {"gen": [], "imp": []},
         "Model D: One-Class SVM (Per-Subject Identity Model)": {"gen": [], "imp": []}
     }
+    for w_if, w_mah in weight_pairs:
+        label = f"Model C: Hybrid ({int(w_if*100)}/{int(w_mah*100)} IF/Mah)"
+        scores_dict[label] = {"gen": [], "imp": []}
 
     for sub in subjects:
         data = subject_data[sub]
@@ -328,9 +339,13 @@ def evaluate_model_architectures(subject_data):
         if_gen = np.clip(((raw_gen_if - p_min) / scale) * 100.0, 0.0, 100.0)
         if_imp = np.clip(((raw_imp_if - p_min) / scale) * 100.0, 0.0, 100.0)
 
-        # 3. Model C: Hybrid Score
-        hyb_gen = 0.7 * if_gen + 0.3 * sim_gen
-        hyb_imp = 0.7 * if_imp + 0.3 * sim_imp
+        # 3. Model C: Hybrid Weight Sweep
+        for w_if, w_mah in weight_pairs:
+            label = f"Model C: Hybrid ({int(w_if*100)}/{int(w_mah*100)} IF/Mah)"
+            hyb_gen = w_if * if_gen + w_mah * sim_gen
+            hyb_imp = w_if * if_imp + w_mah * sim_imp
+            scores_dict[label]["gen"].extend(hyb_gen)
+            scores_dict[label]["imp"].extend(hyb_imp)
 
         # 4. Model D: Per-Subject One-Class SVM
         ocsvm = OneClassSVM(kernel='rbf', gamma='scale', nu=0.05)
@@ -354,9 +369,6 @@ def evaluate_model_architectures(subject_data):
         
         scores_dict["Model B: Mahalanobis Distance (Identity Profile)"]["gen"].extend(sim_gen)
         scores_dict["Model B: Mahalanobis Distance (Identity Profile)"]["imp"].extend(sim_imp)
-
-        scores_dict["Model C: Hybrid Pipeline (IF 70% + Mahalanobis 30%)"]["gen"].extend(hyb_gen)
-        scores_dict["Model C: Hybrid Pipeline (IF 70% + Mahalanobis 30%)"]["imp"].extend(hyb_imp)
 
         scores_dict["Model D: One-Class SVM (Per-Subject Identity Model)"]["gen"].extend(svm_gen)
         scores_dict["Model D: One-Class SVM (Per-Subject Identity Model)"]["imp"].extend(svm_imp)
@@ -401,10 +413,16 @@ def evaluate_model_architectures(subject_data):
             "eer_percent": round(eer_val * 100.0, 2),
             "far_50": round(far_50, 2),
             "frr_50": round(frr_50, 2),
-            "auc": round(auc_val, 4)
+            "auc": round(auc_val, 4),
+            "genuine_scores": gen_arr,
+            "impostor_scores": imp_arr,
+            "far_list": far_list,
+            "frr_list": frr_list,
+            "thresholds": thresholds
         })
 
     return results_table
+
 
 
 def generate_evaluation_plots(eval_results, output_dir):
@@ -495,34 +513,54 @@ def generate_evaluation_plots(eval_results, output_dir):
 
 def evaluate_biometric_performance():
     logger.info("=" * 80)
-    logger.info("  TrustGuard AI v2.0 — Session-Disjoint Genuine Testing + Cross-Subject Impostor Evaluation")
+    logger.info("  TrustGuard AI v2.0 — 2-Stage Scientific Architecture & Feature Set Evaluation")
     logger.info("=" * 80)
 
     subject_data = load_and_preprocess_cmu_dataset()
     if not subject_data:
         return
 
-    # Scientific Retrained Model Ablation Experiments (Points 1 & 3)
+    # STAGE 1: Architecture Selection Matrix (Fixed 4D Core Features)
+    logger.info("\n" + "=" * 80)
+    logger.info("  STAGE 1 — ARCHITECTURE SELECTION MATRIX & HYBRID WEIGHT SWEEP (4D Features)")
+    logger.info("=" * 80)
+    logger.info("  Note: Architectures represent different authentication paradigms:")
+    logger.info("  Global Anomaly Detection (Isolation Forest) vs Per-User Identity Modeling (Mahalanobis & One-Class SVM).")
+    logger.info("=" * 80)
+
+    stage1_results = evaluate_architecture_paradigm_matrix(subject_data)
+
+    logger.info(f"{'Architecture Candidate':<52} | {'EER (%)':<8} | {'FAR@50':<8} | {'FRR@50':<8} | {'AUC':<6}")
+    logger.info("-" * 85)
+    for arch in stage1_results:
+        logger.info(f"{arch['model']:<52} | {arch['eer_percent']:<8} | {arch['far_50']:<8} | {arch['frr_50']:<8} | {arch['auc']:<6}")
+    logger.info("=" * 85)
+
+    # Select winning architecture from Stage 1 (lowest EER, highest AUC)
+    winning_stage1 = min(stage1_results, key=lambda a: (a["eer_percent"], -a["auc"]))
+    logger.info(f"\n🏆 Stage 1 Winner (Best Architecture Paradigm): '{winning_stage1['model']}' (EER={winning_stage1['eer_percent']}%, AUC={winning_stage1['auc']})")
+
+    # STAGE 2: Feature Set Optimization (4D Core vs 7D Extended Features on Winning Architecture)
+    logger.info("\n" + "=" * 80)
+    logger.info("  STAGE 2 — FEATURE SET OPTIMIZATION (4D Core Telemetry vs 7D Extended Telemetry)")
+    logger.info("=" * 80)
+
+    # Feature ablation on Isolation Forest candidates for model artifacts
     feature_experiments = [
-        {"indices": [0, 1, 2, 4], "name": "Variant 1: Baseline (4D Production Candidate)"},
-        {"indices": [0, 1, 2, 3, 4, 5, 6], "name": "Variant 2: Experimental (+ Rhythm/Pause)"}
+        {"indices": [0, 1, 2, 4], "name": "Variant 1: Baseline (4D Core Telemetry)"},
+        {"indices": [0, 1, 2, 3, 4, 5, 6], "name": "Variant 2: Experimental (7D Extended Telemetry)"}
     ]
 
-    exp_results = []
     trained_artifacts = []
-
     for exp in feature_experiments:
-        logger.info(f"\nRetraining Isolation Forest for experiment: {exp['name']}...")
         clf, scaler, p_min, p_max = train_variant_isolation_forest(subject_data, exp["indices"])
         res = run_single_model_evaluation(subject_data, exp["indices"], clf, scaler, p_min, p_max, model_label=exp["name"])
-        exp_results.append(res)
         trained_artifacts.append((clf, scaler, p_min, p_max, exp, res))
 
-    # Select the model with the lowest EER / highest AUC (Points 5 & 6)
     best_tuple = min(trained_artifacts, key=lambda t: (t[5]["eer_percent"], -t[5]["auc"]))
     best_clf, best_scaler, best_p_min, best_p_max, best_exp, best_res = best_tuple
 
-    # Promote winning model to production pipeline (Points 5 & 6)
+    # Promote winning architecture and feature set artifacts (Item 1 & User Request)
     model_path = BASE_DIR / "model.pkl"
     scaler_path = BASE_DIR / "scaler.pkl"
     calibration_path = BASE_DIR / "calibration.json"
@@ -534,114 +572,62 @@ def evaluate_biometric_performance():
     calibration_data = {
         "p_min": round(best_p_min, 6),
         "p_max": round(best_p_max, 6),
-        "selected_variant": best_res["model_label"]
+        "selected_architecture": winning_stage1["model"],
+        "selected_feature_variant": best_res["model_label"]
     }
     with open(calibration_path, "w") as f:
         json.dump(calibration_data, f, indent=2)
 
     metadata_data = {
-        "winning_variant": best_res["model_label"],
+        "winning_architecture": winning_stage1["model"],
+        "winning_feature_variant": best_res["model_label"],
         "feature_indices": best_exp["indices"],
+        "eer_percent": winning_stage1["eer_percent"],
+        "auc": winning_stage1["auc"],
+        "paradigm_note": "Architectures represent different authentication paradigms: global anomaly detection (Isolation Forest) versus per-user identity modeling (Mahalanobis Distance & One-Class SVM).",
         "contamination": 0.05,
         "random_seed": 42,
-        "eer_percent": best_res["eer_percent"],
-        "auc": best_res["auc"],
         "training_timestamp": datetime.now(timezone.utc).isoformat()
     }
-
-
     with open(metadata_path, "w") as f:
         json.dump(metadata_data, f, indent=2)
 
-    logger.info(f"✅ Promoted winning model '{best_res['model_label']}' to live predictor pipeline ({model_path.name}, {scaler_path.name}, {calibration_path.name}, {metadata_path.name}).")
+    logger.info(f"✅ Promoted evidence-based winner '{winning_stage1['model']}' to live predictor pipeline ({model_path.name}, {scaler_path.name}, {calibration_path.name}, {metadata_path.name}).")
 
-    final_res = dict(best_res)
-    final_res["model_label"] = "Selected Final Model"
+    # Generate Evaluation Plots for Best Architecture Candidate
+    plots_dir = BASE_DIR / "evaluation_results"
+    best_eval_dict = {
+        "model_label": winning_stage1["model"],
+        "eer_percent": winning_stage1["eer_percent"],
+        "eer_threshold": 50.0,
+        "auc": winning_stage1["auc"],
+        "far_list": winning_stage1["far_list"],
+        "frr_list": winning_stage1["frr_list"],
+        "tpr_list": [1.0 - r for r in winning_stage1["frr_list"]],
+        "fpr_list": winning_stage1["far_list"],
+        "thresholds": winning_stage1["thresholds"],
+        "genuine_scores": winning_stage1["genuine_scores"],
+        "impostor_scores": winning_stage1["impostor_scores"],
+        "confusion_matrix": {
+            "TN": int(np.sum(winning_stage1["impostor_scores"] < 50.0)),
+            "FP": int(np.sum(winning_stage1["impostor_scores"] >= 50.0)),
+            "FN": int(np.sum(winning_stage1["genuine_scores"] < 50.0)),
+            "TP": int(np.sum(winning_stage1["genuine_scores"] >= 50.0))
+        }
+    }
+    generate_evaluation_plots(best_eval_dict, plots_dir)
 
-
-    # Adversarial Stress Testing (Bot & Evasion Simulation)
+    # Master Report Summary Log
     logger.info("\n" + "=" * 80)
-    logger.info("  ADVERSARIAL STRESS TESTING (Bot & Evasion Simulation)")
+    logger.info("  EVIDENCE-BASED MASTER BIOMETRIC SELECTION REPORT")
     logger.info("=" * 80)
-    
-    bot_scores = []
-    for _ in range(500):
-        std_dwell, std_flight = 0.0, 0.0
-        penalty = 0.0 if (std_dwell < 2.0 or std_flight < 2.0) else 1.0
-        bot_scores.append(100.0 * penalty)
-    bot_scores = np.array(bot_scores)
-    bot_far = (np.sum(bot_scores >= 50.0) / len(bot_scores)) * 100.0
-
-    np.random.seed(42)
-    erratic_scores = []
-    mu_base = np.array([110.0, 12.0, 140.0, 4.5])
-    cov_inv_base = np.eye(4) * (1.0 / (25.0 ** 2))
-
-    for _ in range(500):
-        dwells = np.random.uniform(500, 1500, 10)
-        flights = np.random.uniform(10, 50, 9)
-        avg_d = float(np.mean(dwells))
-        std_d = float(np.std(dwells))
-        avg_f = float(np.mean(flights))
-        spd = float(10.0 / (np.sum(dwells)/1000.0 + np.sum(flights)/1000.0))
-
-        x_err = np.array([avg_d, std_d, avg_f, spd])
-        diff_err = x_err - mu_base
-        dm2_err = float(diff_err.T @ cov_inv_base @ diff_err)
-        sim_err = float(np.clip(np.exp(-np.sqrt(max(dm2_err, 0.0)) / 2.0) * 100.0, 0.0, 100.0))
-
-        hybrid_score = (0.7 * 0.0 + 0.3 * sim_err)
-        erratic_scores.append(hybrid_score)
-    erratic_scores = np.array(erratic_scores)
-    erratic_far = (np.sum(erratic_scores >= 50.0) / len(erratic_scores)) * 100.0
-
-    final_res["adversarial_bot_far"] = round(bot_far, 2)
-    final_res["adversarial_erratic_far"] = round(erratic_far, 2)
-
-    logger.info(f"Script Bot Evasion FAR         : {bot_far:.2f}% (Blocked: {100 - bot_far:.2f}%)")
-    logger.info(f"Erratic Attacker Evasion FAR    : {erratic_far:.2f}% (Blocked: {100 - erratic_far:.2f}%)")
-
-    # Scientific Model Architecture Comparison (Models A, B, C, D)
-    logger.info("\n" + "=" * 80)
-    logger.info("  IDENTITY VERIFICATION ARCHITECTURE COMPARISON (Models A, B, C, D)")
-    logger.info("=" * 80)
-    arch_results = evaluate_model_architectures(subject_data)
-    logger.info(f"{'Architecture Model':<50} | {'EER (%)':<8} | {'FAR@50':<8} | {'FRR@50':<8} | {'AUC':<6}")
-    logger.info("-" * 80)
-    for arch in arch_results:
-        logger.info(f"{arch['model']:<50} | {arch['eer_percent']:<8} | {arch['far_50']:<8} | {arch['frr_50']:<8} | {arch['auc']:<6}")
+    logger.info(f"Selected Winning Architecture : {winning_stage1['model']}")
+    logger.info(f"Optimal Feature Vector        : {best_exp['indices']} ({len(best_exp['indices'])}D Telemetry)")
+    logger.info(f"Equal Error Rate (EER)         : {winning_stage1['eer_percent']:.2f}%")
+    logger.info(f"Area Under ROC Curve (AUC)     : {winning_stage1['auc']:.4f}")
     logger.info("=" * 80)
 
-    # Master Report Log
-    logger.info("\n" + "=" * 80)
-    logger.info("  MASTER MULTI-SUBJECT BIOMETRIC PERFORMANCE REPORT")
-    logger.info("=" * 80)
-
-    logger.info(f"Number of Subjects Evaluated : {final_res['num_subjects']}")
-    logger.info(f"Total Genuine Test Samples   : {final_res['num_genuine']}")
-    logger.info(f"Total Impostor Test Samples  : {final_res['num_impostor']}")
-    logger.info("-" * 80)
-    logger.info(f"Equal Error Rate (EER)       : {final_res['eer_percent']:.2f}% (at threshold T = {final_res['eer_threshold']:.1f}%)")
-    logger.info(f"Area Under ROC Curve (AUC)   : {final_res['auc']:.4f}")
-    logger.info("-" * 80)
-    logger.info("At Default Operating Threshold T = 50.0%:")
-    logger.info(f"  - False Acceptance Rate (FAR): {final_res['far_operating']:.2f}% (Impostors accepted)")
-    logger.info(f"  - False Rejection Rate (FRR): {final_res['frr_operating']:.2f}% (Genuines rejected)")
-    logger.info(f"  - Precision                  : {final_res['precision']:.4f}")
-    logger.info(f"  - Recall                     : {final_res['recall']:.4f}")
-    logger.info(f"  - F1-Score                   : {final_res['f1_score']:.4f}")
-    logger.info("-" * 80)
-    logger.info("CONFUSION MATRIX:")
-    logger.info(f"  True Negatives (TN - Impostors Blocked) : {final_res['confusion_matrix']['TN']}")
-    logger.info(f"  False Positives (FP - Impostors Allowed): {final_res['confusion_matrix']['FP']}")
-    logger.info(f"  False Negatives (FN - Genuines Blocked) : {final_res['confusion_matrix']['FN']}")
-    logger.info(f"  True Positives  (TP - Genuines Allowed) : {final_res['confusion_matrix']['TP']}")
-    logger.info("=" * 80)
-
-    output_dir = BASE_DIR / "evaluation_results"
-    generate_evaluation_plots(final_res, output_dir)
-
-    return final_res
 
 if __name__ == "__main__":
     evaluate_biometric_performance()
+

@@ -54,19 +54,25 @@ graph TD
 
 ---
 
-## 📊 Model Performance & Biometric Architecture Comparison
+## 📊 Model Performance & 2-Stage Biometric Architecture Selection
 
-TrustGuard AI evaluates machine learning performance using a **Session-Disjoint Genuine Testing + Cross-Subject Impostor Evaluation** protocol across all 51 subjects in the CMU Keystroke Dynamics Benchmark Dataset (20,400 total test trials).
+TrustGuard AI evaluates biometric identity architectures using a **Session-Disjoint Genuine Testing + Cross-Subject Impostor Evaluation** protocol across all 51 subjects in the CMU Keystroke Dynamics Benchmark Dataset (20,400 total test trials).
 
-### 🔬 Identity Verification Architecture Comparison (Models A, B, C, D)
-| Architecture Model | Primary Mechanism | EER (%) | FAR (@ T=50) | FRR (@ T=50) | ROC-AUC |
+### 🔬 Stage 1 — Architecture Selection Matrix & Hybrid Weight Sweep (4D Core Telemetry)
+> 📌 **Paradigm Note**: Architectures represent different authentication paradigms: global anomaly detection (Isolation Forest) versus per-user identity modeling (Mahalanobis Distance & One-Class SVM).
+
+| Architecture Candidate | Authentication Paradigm | EER (%) | FAR (@ T=50) | FRR (@ T=50) | ROC-AUC |
 | :--- | :--- | :---: | :---: | :---: | :---: |
-| **Model A: Isolation Forest** | Unsupervised Global Anomaly Detection | 53.43% | 75.00% | 31.98% | 0.4547 |
-| **Model B: Mahalanobis Distance** | Personalized Biometric Identity Profile | **26.60%** | **22.47%** | **33.62%** | **0.8092** |
-| **Model C: Hybrid Pipeline** | Isolation Forest (70%) + Mahalanobis (30%) | 47.11% | 65.15% | 30.76% | 0.5502 |
-| **Model D: One-Class SVM** | Per-Subject Personalized Identity Model | 30.52% | **10.89%** | 63.21% | 0.7036 |
+| **Model A: Isolation Forest** | Global Anomaly Detection | 53.43% | 75.00% | 31.98% | 0.4547 |
+| **Model B: Mahalanobis Distance** | **Personal Identity Profile (Winner)** | **26.60%** | **22.47%** | **33.62%** | **0.8092** |
+| **Model D: One-Class SVM** | Per-Subject Personalized Model | 30.52% | **10.89%** | 63.21% | 0.7036 |
+| **Model C: Hybrid (90/10 IF/Mah)** | Hybrid Weight Sweep | 52.21% | 72.07% | 31.75% | 0.4857 |
+| **Model C: Hybrid (70/30 IF/Mah)** | Hybrid Weight Sweep | 47.11% | 65.15% | 30.76% | 0.5502 |
+| **Model C: Hybrid (50/50 IF/Mah)** | Hybrid Weight Sweep | 40.53% | 52.85% | 30.48% | 0.6281 |
+| **Model C: Hybrid (30/70 IF/Mah)** | Hybrid Weight Sweep | 34.45% | 37.74% | 30.76% | 0.7161 |
+| **Model C: Hybrid (10/90 IF/Mah)** | Hybrid Weight Sweep | 28.74% | 26.44% | 32.21% | 0.7857 |
 
-> 💡 **Key Scientific Insight**: Standard unsupervised Isolation Forest alone achieves near-random discrimination ($\text{EER} \approx 53.43\%$, $\text{AUC} = 0.4547$) because it is designed to detect generic outliers across humans rather than individual identity. In contrast, personalized identity-matching architectures like **Mahalanobis Distance Biometric Profiles** ($\text{AUC} = 0.8092$) and **Per-Subject One-Class SVMs** ($\text{FAR} = 10.89\%$) provide the necessary discrimination for genuine identity verification.
+> 💡 **Empirical Finding**: As weight shifts away from Isolation Forest and toward Mahalanobis Distance ($90/10 \to 10/90 \to 0/100$), performance monotonically improves ($\text{EER: } 52.21\% \to 28.74\% \to \mathbf{26.60\%}$, $\text{AUC: } 0.4857 \to 0.7857 \to \mathbf{0.8092}$). This proves that **Model B (Mahalanobis Distance Profile)** is the evidence-based winner for biometric identity verification.
 
 ### 🛡️ Adversarial Stress Testing (Bot Evasion & Poisoning Defense)
 ```
@@ -79,6 +85,7 @@ Profile Poisoning Resistance : 100.00% (Shielded via Multi-Factor Criteria & 10%
 ```
 
 > Detailed methodologies, mathematical derivations, and limitation analyses are documented in [`docs/ML_EVALUATION.md`](docs/ML_EVALUATION.md). Generated evaluation plots are stored in [`ml/evaluation_results/`](ml/evaluation_results/).
+
 
 
 
