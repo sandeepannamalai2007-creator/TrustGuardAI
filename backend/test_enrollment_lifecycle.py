@@ -31,14 +31,18 @@ def test_enrollment_lifecycle_state_machine():
             db.delete(profile)
             db.commit()
 
-        # 1. First observation (Sample 1/5): Profile initialized in ENROLLING state
+        # Clean existing enrollment buffer
+        crud.clear_enrollment_buffer(db, student.id)
+
+        # 1. First observation (Sample 1/5): Profile initialized in ENROLLING state in buffer
         p1 = profile_service.update_student_profile(
             db=db,
             student_id=student.id,
             avg_dwell_time=100.0,
             avg_flight_time=150.0,
             typing_speed=5.0,
-            mouse_velocity=200.0
+            mouse_velocity=200.0,
+            is_enrollment_sample=True
         )
         assert p1.enrollment_status == "ENROLLING"
         assert p1.enrollment_count == 1
@@ -52,22 +56,25 @@ def test_enrollment_lifecycle_state_machine():
                 avg_dwell_time=102.0,
                 avg_flight_time=148.0,
                 typing_speed=5.1,
-                mouse_velocity=205.0
+                mouse_velocity=205.0,
+                is_enrollment_sample=True
             )
             assert p.enrollment_status == "ENROLLING"
             assert p.enrollment_count == idx
 
-        # 3. 5th observation: Transitions to BASELINE_READY
+        # 3. 5th observation: Calculates baseline and transitions to BASELINE_READY
         p5 = profile_service.update_student_profile(
             db=db,
             student_id=student.id,
             avg_dwell_time=100.0,
             avg_flight_time=150.0,
             typing_speed=5.0,
-            mouse_velocity=200.0
+            mouse_velocity=200.0,
+            is_enrollment_sample=True
         )
         assert p5.enrollment_status == "BASELINE_READY"
         assert p5.enrollment_count == 5
+
 
         # 4. 6th observation: Transitions to AUTHENTICATING
         p6 = profile_service.update_student_profile(

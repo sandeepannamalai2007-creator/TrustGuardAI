@@ -26,6 +26,9 @@ def test_profile_poisoning_resistance():
             db.delete(profile)
             db.commit()
 
+        # Clean existing enrollment buffer
+        crud.clear_enrollment_buffer(db, student.id)
+
         # Complete 5 Enrollment Windows to establish baseline (100.0ms dwell time)
         for _ in range(5):
             updated_init = update_student_profile(
@@ -34,9 +37,11 @@ def test_profile_poisoning_resistance():
                 avg_dwell_time=100.0,
                 avg_flight_time=150.0,
                 typing_speed=4.5,
-                mouse_velocity=200.0
+                mouse_velocity=200.0,
+                is_enrollment_sample=True
             )
             assert updated_init is not None
+
 
         init_profile = crud.get_behavior_profile(db, student.id)
         assert init_profile.enrollment_status == "BASELINE_READY"

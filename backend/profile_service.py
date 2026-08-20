@@ -18,19 +18,17 @@ def update_student_profile(
     avg_flight_time: float,
     typing_speed: float,
     mouse_velocity: float,
-    trust_score: float = 100.0,
-    similarity_score: float = 100.0,
+    trust_score: float | None = None,
+    similarity_score: float | None = None,
     security_state: str = "NORMAL",
-    high_trust_count: int = 3
-) -> bool:
-    """
-    Updates the user's behavioral profile baseline if and only if strict conditions are met:
-    1. High Trust Score (trust_score >= 70.0)
-    2. High Profile Similarity (similarity_score >= 60.0)
-    3. Stable Security State (security_state == "NORMAL")
-    4. Multiple Observations (high_trust_count >= 3 consecutive trusted windows)
+    high_trust_count: int = 0,
+    is_enrollment_sample: bool = False
+):
 
-    Maintains existing 10% max drift protection (cap_change) in crud.update_behavior_profile.
+    """
+    Updates the user's behavioral profile baseline or accumulates pre-profile enrollment buffer samples.
+    - Enrollment Samples (is_enrollment_sample=True or profile is None): Collected in EnrollmentBuffer (N < 5)
+    - Active Adaptation (profile exists): Enforces strict multi-factor poisoning shields & 10% max drift cap.
     """
     # Quality Control Check (Point 2): Reject invalid or bot-like timing samples during enrollment
     if avg_dwell_time <= 30.0 or avg_dwell_time > 500.0 or avg_flight_time <= 10.0 or avg_flight_time > 800.0:
@@ -39,7 +37,8 @@ def update_student_profile(
 
     profile = crud.get_behavior_profile(db, student_id)
 
-    if profile is None:
+    if profile is None or is_enrollment_sample:
+
         # Collect sample into temporary pre-profile enrollment buffer (Item 1)
         crud.add_enrollment_sample_to_buffer(
             db=db,
@@ -78,13 +77,14 @@ def update_student_profile(
         )
 
     # Once profile exists (BASELINE_READY or AUTHENTICATING), validate multi-factor criteria for baseline update (Poisoning Shield)
-
-    if trust_score < MIN_TRUST_SCORE:
-        logger.info(f"[PROFILE SHIELD] Rejected profile update: Trust score {trust_score:.1f}% < {MIN_TRUST_SCORE:.1f}%")
+    if trust_score is None or trust_score < MIN_TRUST_SCORE:
+        score_val = trust_score if trust_score is not None else 0.0
+        logger.info(f"[PROFILE SHIELD] Rejected profile update: Trust score {score_val:.1f}% < {MIN_TRUST_SCORE:.1f}%")
         return None
 
-    if similarity_score < MIN_SIMILARITY_SCORE:
-        logger.info(f"[PROFILE SHIELD] Rejected profile update: Similarity score {similarity_score:.1f}% < {MIN_SIMILARITY_SCORE:.1f}%")
+    if similarity_score is None or similarity_score < MIN_SIMILARITY_SCORE:
+        sim_val = similarity_score if similarity_score is not None else 0.0
+        logger.info(f"[PROFILE SHIELD] Rejected profile update: Similarity score {sim_val:.1f}% < {MIN_SIMILARITY_SCORE:.1f}%")
         return None
 
     if security_state != "NORMAL":
@@ -94,6 +94,7 @@ def update_student_profile(
     if high_trust_count < MIN_TRUSTED_OBSERVATIONS:
         logger.info(f"[PROFILE SHIELD] Rejected profile update: High trust observation count {high_trust_count} < {MIN_TRUSTED_OBSERVATIONS}")
         return None
+
 
 
     logger.info(f"[PROFILE UPDATE] Multi-factor criteria satisfied. Updating profile baseline for student {student_id}...")

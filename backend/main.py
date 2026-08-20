@@ -286,11 +286,9 @@ def receive_features(
             avg_flight_time=request.avg_flight_time_ms,
             typing_speed=request.typing_speed_cps,
             mouse_velocity=request.avg_mouse_velocity_px_s,
-            trust_score=100.0,
-            similarity_score=100.0,
-            security_state="NORMAL",
-            high_trust_count=3
+            is_enrollment_sample=True
         )
+
         cnt = updated_profile.enrollment_count if updated_profile else 1
         status_str = updated_profile.enrollment_status if updated_profile else "ENROLLING"
         if status_str == "ENROLLING":
