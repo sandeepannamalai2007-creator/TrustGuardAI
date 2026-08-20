@@ -24,7 +24,26 @@ def test_profile_lifecycle():
             db.delete(profile)
             db.commit()
 
-        # 2. Test create profile (Sample 1/5)
+        # Clean existing enrollment buffer
+        crud.clear_enrollment_buffer(db, student.id)
+
+        # 2. Test enrollment buffer accumulation (Samples 1 to 4)
+        for idx in range(1, 5):
+            prog = profile_service.update_student_profile(
+                db=db,
+                student_id=student.id,
+                avg_dwell_time=100.0,
+                avg_flight_time=150.0,
+                typing_speed=5.0,
+                mouse_velocity=200.0
+            )
+            assert prog.enrollment_status == "ENROLLING"
+            assert prog.sample_count == idx
+
+        # Official profile not created yet
+        assert crud.get_behavior_profile(db, student.id) is None
+
+        # 3. 5th valid sample creates official BehaviorProfile with mean baseline
         profile = profile_service.update_student_profile(
             db=db,
             student_id=student.id,
@@ -38,23 +57,9 @@ def test_profile_lifecycle():
         assert profile.avg_flight_time == 150.0
         assert profile.typing_speed == 5.0
         assert profile.mouse_velocity == 200.0
-        assert profile.sample_count == 1
-        assert profile.enrollment_status == "ENROLLING"
+        assert profile.sample_count == 5
+        assert profile.enrollment_status == "BASELINE_READY"
 
-        # 3. Test capped drift updating during enrollment
-        # We send a huge jump (300.0 ms dwell). Capping limits it to 10% (100.0 + 10.0 = 110.0 ms).
-        # When combined with the first sample (100.0), the mean becomes: (100.0 * 1 + 110.0) / 2 = 105.0 ms
-        updated_profile = profile_service.update_student_profile(
-            db=db,
-            student_id=student.id,
-            avg_dwell_time=300.0,
-            avg_flight_time=150.0,
-            typing_speed=5.0,
-            mouse_velocity=200.0
-        )
-        assert updated_profile.sample_count == 2
-        assert updated_profile.avg_dwell_time == 105.0 # (100 + 110) / 2
-        assert updated_profile.enrollment_status == "ENROLLING"
 
         
     finally:

@@ -12,19 +12,22 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, "model.pkl")
 SCALER_PATH = os.path.join(BASE_DIR, "scaler.pkl")
 CALIBRATION_PATH = os.path.join(BASE_DIR, "calibration.json")
+METADATA_PATH = os.path.join(BASE_DIR, "model_metadata.json")
+
 
 # Load model, scaler, and calibration parameters
 model = None
 scaler = None
 calibration_p_min = -0.20
 calibration_p_max = 0.10
+feature_indices = [0, 1, 2, 4]
 
 
 def reload_model():
     """
-    Hot-reloads model, scaler, and empirical calibration parameters from disk.
+    Hot-reloads model, scaler, empirical calibration parameters, and model metadata from disk.
     """
-    global model, scaler, calibration_p_min, calibration_p_max
+    global model, scaler, calibration_p_min, calibration_p_max, feature_indices
     if os.path.exists(MODEL_PATH) and os.path.exists(SCALER_PATH):
         model = joblib.load(MODEL_PATH)
         scaler = joblib.load(SCALER_PATH)
@@ -40,6 +43,14 @@ def reload_model():
         except (OSError, ValueError, KeyError) as e:
             logger.warning(f"Failed to load calibration parameters ({e}). Using defaults.")
 
+    if os.path.exists(METADATA_PATH):
+        try:
+            with open(METADATA_PATH, "r") as f:
+                meta = json.load(f)
+                feature_indices = meta.get("feature_indices", [0, 1, 2, 4])
+                logger.info(f"✅ Model metadata loaded: winning_variant='{meta.get('winning_variant')}', feature_indices={feature_indices}")
+        except (OSError, ValueError, KeyError) as e:
+            logger.warning(f"Failed to load model metadata ({e}). Using defaults.")
 
 
 try:
@@ -51,20 +62,23 @@ except (OSError, FileNotFoundError, ValueError) as e:
 def predict_trust_score(features: dict) -> int:
     """
     Predicts a trust score (0-100) based on extracted telemetry features using empirical percentile calibration.
-    If the model is not loaded, uses a fallback heuristic based on feature thresholds.
+    Dynamically constructs input feature vectors matching the promoted model variant.
     """
     if model is None or scaler is None:
         return _fallback_trust_score(features)
 
     try:
-        # Extract features in exact order:
-        # ["avg_dwell_time_ms", "std_dwell_time_ms", "avg_flight_time_ms", "typing_speed_cps"]
-        input_data = np.array([[
-            features.get("avg_dwell_time_ms", 0.0),
-            features.get("std_dwell_time_ms", 0.0),
-            features.get("avg_flight_time_ms", 0.0),
-            features.get("typing_speed_cps", 0.0)
-        ]])
+        avg_d = float(features.get("avg_dwell_time_ms", 0.0))
+        std_d = float(features.get("std_dwell_time_ms", 0.0))
+        avg_f = float(features.get("avg_flight_time_ms", 0.0))
+        std_f = float(features.get("std_flight_time_ms", 0.0))
+        spd = float(features.get("typing_speed_cps", 0.0))
+        df_ratio = avg_d / (avg_f + 1e-5)
+        pause_freq = 1.0 if avg_f > 200.0 else 0.0
+
+        all_features = [avg_d, std_d, avg_f, std_f, spd, df_ratio, pause_freq]
+        input_vector = [all_features[idx] for idx in feature_indices]
+        input_data = np.array([input_vector])
 
         scaled_data = scaler.transform(input_data)
         raw_score = float(model.decision_function(scaled_data)[0])
@@ -73,6 +87,7 @@ def predict_trust_score(features: dict) -> int:
     except (ValueError, KeyError, AttributeError) as e:
         logger.error(f"Error predicting trust score: {e}")
         return _fallback_trust_score(features)
+
 
 
 def _decision_score_to_trust_score(decision_score: float) -> int:

@@ -34,8 +34,21 @@ class BehaviorProfile(Base):
 
 
 
+class EnrollmentBuffer(Base):
+    __tablename__ = "enrollment_buffers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    avg_dwell_time = Column(Float, nullable=False)
+    avg_flight_time = Column(Float, nullable=False)
+    typing_speed = Column(Float, nullable=False)
+    mouse_velocity = Column(Float, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class ExamSession(Base):
     __tablename__ = "exam_sessions"
+
 
     id = Column(Integer, primary_key=True, index=True)
     student_id = Column(Integer, ForeignKey("students.id"))

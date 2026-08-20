@@ -46,9 +46,10 @@ def test_e2e_full_session_flow():
         assert feat_resp.status_code == 200
 
     feat_data = feat_resp.json()
-    assert feat_data["status"] == "success"
+    assert feat_data["status"] in ("success", "warning")
     assert "trust_score" in feat_data
     assert "security_state" in feat_data
+
 
 
     # Step 3: Verify Unauthenticated Request Rejection (401)

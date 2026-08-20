@@ -42,7 +42,39 @@ def get_behavior_profile(db: Session, student_id: int):
     )
 
 
+from db_models import EnrollmentBuffer
+
 REQUIRED_ENROLLMENT_SAMPLES = 5
+
+
+def get_enrollment_buffer_samples(db: Session, student_id: int):
+    return db.query(EnrollmentBuffer).filter(EnrollmentBuffer.student_id == student_id).all()
+
+
+def add_enrollment_sample_to_buffer(
+    db: Session,
+    student_id: int,
+    avg_dwell_time: float,
+    avg_flight_time: float,
+    typing_speed: float,
+    mouse_velocity: float,
+):
+    buf_sample = EnrollmentBuffer(
+        student_id=student_id,
+        avg_dwell_time=avg_dwell_time,
+        avg_flight_time=avg_flight_time,
+        typing_speed=typing_speed,
+        mouse_velocity=mouse_velocity
+    )
+    db.add(buf_sample)
+    db.commit()
+    db.refresh(buf_sample)
+    return buf_sample
+
+
+def clear_enrollment_buffer(db: Session, student_id: int):
+    db.query(EnrollmentBuffer).filter(EnrollmentBuffer.student_id == student_id).delete()
+    db.commit()
 
 
 def create_behavior_profile(
@@ -59,9 +91,9 @@ def create_behavior_profile(
         avg_flight_time=avg_flight_time,
         typing_speed=typing_speed,
         mouse_velocity=mouse_velocity,
-        sample_count=1,
-        enrollment_count=1,
-        enrollment_status="ENROLLING"
+        sample_count=5,
+        enrollment_count=5,
+        enrollment_status="BASELINE_READY"
     )
 
     db.add(profile)
@@ -69,6 +101,7 @@ def create_behavior_profile(
     db.refresh(profile)
 
     return profile
+
 
 
 DEFAULT_MAX_DRIFT_PCT = 0.10

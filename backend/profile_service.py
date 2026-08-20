@@ -40,10 +40,8 @@ def update_student_profile(
     profile = crud.get_behavior_profile(db, student_id)
 
     if profile is None:
-
-        # Initialize initial baseline profile
-        logger.info(f"[PROFILE INIT] Establishing initial enrollment profile for student {student_id}")
-        return crud.create_behavior_profile(
+        # Collect sample into temporary pre-profile enrollment buffer (Item 1)
+        crud.add_enrollment_sample_to_buffer(
             db=db,
             student_id=student_id,
             avg_dwell_time=avg_dwell_time,
@@ -51,21 +49,36 @@ def update_student_profile(
             typing_speed=typing_speed,
             mouse_velocity=mouse_velocity
         )
+        samples = crud.get_enrollment_buffer_samples(db, student_id)
+        cnt = len(samples)
 
-    # During ENROLLING phase (N < 5), accumulate baseline samples without enforcing poisoning checks
-    if profile.enrollment_status == "ENROLLING":
-        logger.info(f"[ENROLLMENT ACCUMULATE] Adding enrollment sample {profile.enrollment_count + 1}/5 for student {student_id}")
-        return crud.update_behavior_profile(
+        if cnt < 5:
+            logger.info(f"[ENROLLMENT BUFFER] Collected sample {cnt}/5 for student {student_id}. No official profile created yet.")
+            class TransientEnrollmentProgress:
+                enrollment_status = "ENROLLING"
+                enrollment_count = cnt
+                sample_count = cnt
+            return TransientEnrollmentProgress()
+
+        # 5 valid samples collected in buffer! Calculate final mean baseline μ and create official profile
+        mean_dwell = float(sum(s.avg_dwell_time for s in samples) / 5.0)
+        mean_flight = float(sum(s.avg_flight_time for s in samples) / 5.0)
+        mean_speed = float(sum(s.typing_speed for s in samples) / 5.0)
+        mean_mouse = float(sum(s.mouse_velocity for s in samples) / 5.0)
+
+        crud.clear_enrollment_buffer(db, student_id)
+        logger.info(f"[BASELINE READY] 5 valid enrollment samples collected. Creating official BehaviorProfile for student {student_id}.")
+        return crud.create_behavior_profile(
             db=db,
-            profile=profile,
-            avg_dwell_time=avg_dwell_time,
-            avg_flight_time=avg_flight_time,
-            typing_speed=typing_speed,
-            mouse_velocity=mouse_velocity
+            student_id=student_id,
+            avg_dwell_time=mean_dwell,
+            avg_flight_time=mean_flight,
+            typing_speed=mean_speed,
+            mouse_velocity=mean_mouse
         )
 
+    # Once profile exists (BASELINE_READY or AUTHENTICATING), validate multi-factor criteria for baseline update (Poisoning Shield)
 
-    # Once BASELINE_READY or AUTHENTICATING, validate multi-factor criteria for baseline update (Poisoning Resistance)
     if trust_score < MIN_TRUST_SCORE:
         logger.info(f"[PROFILE SHIELD] Rejected profile update: Trust score {trust_score:.1f}% < {MIN_TRUST_SCORE:.1f}%")
         return None
