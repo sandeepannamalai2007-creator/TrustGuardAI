@@ -51,6 +51,24 @@ SessionLocal = sessionmaker(
 
 Base = declarative_base()
 
+def auto_migrate_db(target_engine):
+    """Adds missing columns to SQLite database if schema was updated."""
+    from sqlalchemy import text
+    with target_engine.connect() as conn:
+        try:
+            conn.execute(text("ALTER TABLE behavior_profiles ADD COLUMN enrollment_status VARCHAR DEFAULT 'ENROLLING'"))
+            conn.commit()
+        except (OperationalError, DatabaseError) as e:
+            logger.debug(f"Column enrollment_status already exists or migration skipped: {e}")
+        try:
+            conn.execute(text("ALTER TABLE behavior_profiles ADD COLUMN enrollment_count INTEGER DEFAULT 0"))
+            conn.commit()
+        except (OperationalError, DatabaseError) as e:
+            logger.debug(f"Column enrollment_count already exists or migration skipped: {e}")
+
+
+auto_migrate_db(engine)
+
 def get_db():
     db = SessionLocal()
     try:

@@ -245,22 +245,42 @@ def receive_features(
 
     current_state = session.get("security_state", "NORMAL")
     if current_state == "LOCKED":
-        return FeatureResponse(status="locked", message="Workstation Locked: Continuous security policy violations detected.", trust_score=0.0, security_state="LOCKED")
+        return FeatureResponse(
+            status="locked",
+            message="Workstation Locked: Continuous security policy violations detected.",
+            trust_score=0.0,
+            security_state="LOCKED"
+        )
 
     if not add_features(request.session_id, request.model_dump()):
         raise HTTPException(status_code=404, detail="Invalid Session ID")
 
     session = get_session(request.session_id)
+
+    has_typing_data = (request.keystroke_count >= 5) or (request.avg_dwell_time_ms > 0)
+    if not has_typing_data and request.click_count == 0:
+        last_score = session.get("last_trust_score", 50.0)
+        return FeatureResponse(
+            status="insufficient_data",
+            message="INSUFFICIENT_SIGNAL: No usable biometric timing collected during window. Security state preserved.",
+            trust_score=last_score,
+            security_state=current_state,
+            explanations=["Insufficient biometric data captured during window."]
+        )
+
+
+    session["last_trust_score"] = session.get("last_trust_score", 50.0)
     student = crud.get_student(db, session["user_id"])
     profile = crud.get_behavior_profile(db, student.id) if student else None
     adaptive_t = compute_adaptive_threshold(db, profile) if profile else 50.0
 
     trust_score, similarity_score, explanations = _process_biometric_evaluation(db, student, request)
+    session["last_trust_score"] = trust_score
     metrics_collector.record_trust_score(trust_score)
     new_state = update_security_state(session, trust_score, adaptive_threshold=adaptive_t)
 
     # Attempt baseline adaptation (enforces high trust, high similarity, normal state, and observation count)
-    if student:
+    if student and has_typing_data:
         update_student_profile(
             db=db,
             student_id=student.id,
@@ -274,12 +294,11 @@ def receive_features(
             high_trust_count=session.get("high_trust_count", 0)
         )
 
-
-
     step_up = is_step_up_required(session)
     save_session(request.session_id, session)
 
     _log_security_audit(db, session["exam_session_id"], trust_score, similarity_score, request)
+
 
     return FeatureResponse(
         status="locked" if new_state == "LOCKED" else ("warning" if step_up else "success"),

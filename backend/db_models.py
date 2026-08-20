@@ -27,8 +27,11 @@ class BehaviorProfile(Base):
     typing_speed = Column(Float)
     mouse_velocity = Column(Float)
     sample_count = Column(Integer, default=0)
+    enrollment_status = Column(String, default="ENROLLING")
+    enrollment_count = Column(Integer, default=0)
 
     student = relationship("Student", back_populates="profiles")
+
 
 
 class ExamSession(Base):

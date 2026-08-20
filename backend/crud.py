@@ -42,6 +42,9 @@ def get_behavior_profile(db: Session, student_id: int):
     )
 
 
+REQUIRED_ENROLLMENT_SAMPLES = 5
+
+
 def create_behavior_profile(
     db: Session,
     student_id: int,
@@ -57,6 +60,8 @@ def create_behavior_profile(
         typing_speed=typing_speed,
         mouse_velocity=mouse_velocity,
         sample_count=1,
+        enrollment_count=1,
+        enrollment_status="ENROLLING"
     )
 
     db.add(profile)
@@ -114,11 +119,20 @@ def update_behavior_profile(
     ) / (profile.sample_count + 1)
 
     profile.sample_count += 1
+    profile.enrollment_count = (profile.enrollment_count or 0) + 1
+
+    # Transition enrollment status lifecycle: ENROLLING -> BASELINE_READY -> AUTHENTICATING
+    if profile.enrollment_count >= REQUIRED_ENROLLMENT_SAMPLES:
+        if profile.enrollment_status == "ENROLLING":
+            profile.enrollment_status = "BASELINE_READY"
+        else:
+            profile.enrollment_status = "AUTHENTICATING"
 
     db.commit()
     db.refresh(profile)
 
     return profile
+
 
 
 def create_exam_session(db: Session, student_id: int):

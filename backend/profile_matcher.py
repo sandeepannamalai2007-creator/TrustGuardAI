@@ -106,10 +106,10 @@ def compare_with_profile(
 
 def compute_adaptive_threshold(db: Session, profile: BehaviorProfile) -> float:
     """
-    Priority C: Computes a personalized adaptive security threshold (30.0% to 65.0%)
-    based on a student's historical typing variance.
-    - Highly consistent typists -> tighter threshold (~60%)
-    - Variable typists -> broader threshold (~40%)
+    Computes a personalized adaptive security threshold (35.0% to 65.0%)
+    based on multimodal profile stability across dwell, flight, speed, and mouse velocity variance.
+    - Highly consistent multimodal behavior -> tighter threshold (~60%)
+    - Variable behavior -> broader threshold (~40%)
     """
     if not profile or not profile.student_id:
         return 50.0
@@ -119,10 +119,22 @@ def compute_adaptive_threshold(db: Session, profile: BehaviorProfile) -> float:
         return 50.0
 
     dwell_vals = [log.avg_dwell for log in history if log.avg_dwell > 0]
-    if len(dwell_vals) < 3:
+    flight_vals = [log.avg_flight for log in history if log.avg_flight > 0]
+    speed_vals = [log.typing_speed for log in history if log.typing_speed > 0]
+    mouse_vals = [log.avg_mouse_velocity for log in history if log.avg_mouse_velocity > 0]
+
+    if len(dwell_vals) < 3 or len(flight_vals) < 3:
         return 50.0
 
-    std_dwell = float(np.std(dwell_vals))
-    # Base threshold starts at 55.0, scales down by 0.5 for each ms of natural variance
-    adaptive_t = 55.0 - (0.5 * min(std_dwell, 40.0))
+    # Calculate normalized standard deviations per modality
+    std_dwell = float(np.std(dwell_vals)) / 20.0
+    std_flight = float(np.std(flight_vals)) / 40.0
+    std_speed = (float(np.std(speed_vals)) / 1.5) if len(speed_vals) >= 3 else 0.5
+    std_mouse = (float(np.std(mouse_vals)) / 50.0) if len(mouse_vals) >= 3 else 0.5
+
+    # Combined multimodal instability penalty
+    multimodal_instability = (std_dwell + std_flight + std_speed + std_mouse) / 4.0
+
+    # Base threshold starts at 60.0, scales down up to 20 points based on multimodal variance
+    adaptive_t = 60.0 - (15.0 * min(multimodal_instability, 1.5))
     return round(max(35.0, min(65.0, adaptive_t)), 1)
