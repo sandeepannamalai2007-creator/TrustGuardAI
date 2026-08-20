@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 
@@ -10,20 +11,36 @@ logger = logging.getLogger(__name__)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, "model.pkl")
 SCALER_PATH = os.path.join(BASE_DIR, "scaler.pkl")
+CALIBRATION_PATH = os.path.join(BASE_DIR, "calibration.json")
 
-# Load model and scaler lazily or at module load time
+# Load model, scaler, and calibration parameters
 model = None
 scaler = None
+calibration_p_min = -0.20
+calibration_p_max = 0.10
+
 
 def reload_model():
     """
-    Hot-reloads model and scaler from disk.
+    Hot-reloads model, scaler, and empirical calibration parameters from disk.
     """
-    global model, scaler
+    global model, scaler, calibration_p_min, calibration_p_max
     if os.path.exists(MODEL_PATH) and os.path.exists(SCALER_PATH):
         model = joblib.load(MODEL_PATH)
         scaler = joblib.load(SCALER_PATH)
         logger.info("✅ TrustGuard AI model hot-reloaded successfully.")
+
+    if os.path.exists(CALIBRATION_PATH):
+        try:
+            with open(CALIBRATION_PATH, "r") as f:
+                cal_data = json.load(f)
+                calibration_p_min = cal_data.get("p_min", -0.20)
+                calibration_p_max = cal_data.get("p_max", 0.10)
+                logger.info(f"✅ Empirical Calibration loaded: p_min={calibration_p_min:.4f}, p_max={calibration_p_max:.4f}")
+        except (OSError, ValueError, KeyError) as e:
+            logger.warning(f"Failed to load calibration parameters ({e}). Using defaults.")
+
+
 
 try:
     reload_model()
@@ -31,40 +48,27 @@ except (OSError, FileNotFoundError, ValueError) as e:
     logger.error(f"❌ Failed to load ML model: {e}")
 
 
-DECISION_SCORE_MIN = -0.3
-DECISION_SCORE_MAX = 0.3
-DECISION_SCORE_SCALE = DECISION_SCORE_MAX - DECISION_SCORE_MIN
-
-
 def predict_trust_score(features: dict) -> int:
     """
-    Predicts a trust score (0-100) based on extracted telemetry features.
+    Predicts a trust score (0-100) based on extracted telemetry features using empirical percentile calibration.
     If the model is not loaded, uses a fallback heuristic based on feature thresholds.
     """
     if model is None or scaler is None:
-        # Fallback heuristic calculation if model loading failed
         return _fallback_trust_score(features)
 
     try:
-        # Extract features in exact order used during training:
-        # ["avg_dwell_time_ms", "std_dwell_time_ms", "avg_flight_time_ms", "std_flight_time_ms", "typing_speed_cps"]
+        # Extract features in exact order:
+        # ["avg_dwell_time_ms", "std_dwell_time_ms", "avg_flight_time_ms", "typing_speed_cps"]
         input_data = np.array([[
             features.get("avg_dwell_time_ms", 0.0),
             features.get("std_dwell_time_ms", 0.0),
             features.get("avg_flight_time_ms", 0.0),
-            features.get("std_flight_time_ms", 0.0),
             features.get("typing_speed_cps", 0.0)
         ]])
 
-        # Scale features
         scaled_data = scaler.transform(input_data)
-
-        # Get raw decision score from Isolation Forest (higher = more normal, lower = anomalous)
-        raw_score = model.decision_function(scaled_data)[0]
-
-        # Convert decision score to 0-100 trust score
-        trust_score = _decision_score_to_trust_score(raw_score)
-        return trust_score
+        raw_score = float(model.decision_function(scaled_data)[0])
+        return _decision_score_to_trust_score(raw_score)
 
     except (ValueError, KeyError, AttributeError) as e:
         logger.error(f"Error predicting trust score: {e}")
@@ -73,13 +77,13 @@ def predict_trust_score(features: dict) -> int:
 
 def _decision_score_to_trust_score(decision_score: float) -> int:
     """
-    Converts raw Isolation Forest decision_function score (-0.3 to +0.3)
-    into a human-readable Trust Score (0 to 100).
+    Converts raw Isolation Forest decision_function score into a human-readable Trust Score (0 to 100)
+    using empirical percentile bounds (p_min and p_max) saved during model training/evaluation.
     """
-    decision_score = max(DECISION_SCORE_MIN, min(DECISION_SCORE_MAX, decision_score))
-    raw_trust = ((decision_score - DECISION_SCORE_MIN) / DECISION_SCORE_SCALE) * 100.0
-    trust_score_int = round(raw_trust)
-    return max(0, min(100, trust_score_int))
+    scale = max(calibration_p_max - calibration_p_min, 1e-4)
+    raw_trust = ((decision_score - calibration_p_min) / scale) * 100.0
+    return max(0, min(100, round(raw_trust)))
+
 
 
 def _fallback_trust_score(features: dict) -> int:

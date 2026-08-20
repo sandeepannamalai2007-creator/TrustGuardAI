@@ -32,9 +32,15 @@ def update_student_profile(
 
     Maintains existing 10% max drift protection (cap_change) in crud.update_behavior_profile.
     """
+    # Quality Control Check (Point 2): Reject invalid or bot-like timing samples during enrollment
+    if avg_dwell_time <= 30.0 or avg_dwell_time > 500.0 or avg_flight_time <= 10.0 or avg_flight_time > 800.0:
+        logger.info(f"[ENROLLMENT REJECT] Rejected low-quality/bot timing sample during enrollment (dwell={avg_dwell_time:.1f}ms, flight={avg_flight_time:.1f}ms)")
+        return None
+
     profile = crud.get_behavior_profile(db, student_id)
 
     if profile is None:
+
         # Initialize initial baseline profile
         logger.info(f"[PROFILE INIT] Establishing initial enrollment profile for student {student_id}")
         return crud.create_behavior_profile(
@@ -57,6 +63,7 @@ def update_student_profile(
             typing_speed=typing_speed,
             mouse_velocity=mouse_velocity
         )
+
 
     # Once BASELINE_READY or AUTHENTICATING, validate multi-factor criteria for baseline update (Poisoning Resistance)
     if trust_score < MIN_TRUST_SCORE:

@@ -23,10 +23,13 @@ Key Engineering Features:
 7. Adversarial Stress Testing: Evaluates zero-variance script bots and erratic attackers separately.
 """
 
+import json
 import logging
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
+import joblib
 import matplotlib
 import numpy as np
 import pandas as pd
@@ -360,18 +363,55 @@ def evaluate_biometric_performance():
     ]
 
     exp_results = []
+    trained_artifacts = []
+
     for exp in feature_experiments:
         logger.info(f"\nRetraining Isolation Forest for experiment: {exp['name']}...")
         clf, scaler, p_min, p_max = train_variant_isolation_forest(subject_data, exp["indices"])
         res = run_single_model_evaluation(subject_data, exp["indices"], clf, scaler, p_min, p_max, model_label=exp["name"])
         exp_results.append(res)
+        trained_artifacts.append((clf, scaler, p_min, p_max, exp, res))
+
+    # Select the model with the lowest EER / highest AUC (Points 5 & 6)
+    best_tuple = min(trained_artifacts, key=lambda t: (t[5]["eer_percent"], -t[5]["auc"]))
+    best_clf, best_scaler, best_p_min, best_p_max, best_exp, best_res = best_tuple
+
+    # Promote winning model to production pipeline (Points 5 & 6)
+    model_path = BASE_DIR / "model.pkl"
+    scaler_path = BASE_DIR / "scaler.pkl"
+    calibration_path = BASE_DIR / "calibration.json"
+    metadata_path = BASE_DIR / "model_metadata.json"
+
+    joblib.dump(best_clf, model_path)
+    joblib.dump(best_scaler, scaler_path)
+
+    calibration_data = {
+        "p_min": round(best_p_min, 6),
+        "p_max": round(best_p_max, 6),
+        "selected_variant": best_res["model_label"]
+    }
+    with open(calibration_path, "w") as f:
+        json.dump(calibration_data, f, indent=2)
+
+    metadata_data = {
+        "winning_variant": best_res["model_label"],
+        "feature_indices": best_exp["indices"],
+        "contamination": 0.05,
+        "random_seed": 42,
+        "eer_percent": best_res["eer_percent"],
+        "auc": best_res["auc"],
+        "training_timestamp": datetime.now(timezone.utc).isoformat()
+    }
 
 
-    # Select the model with the lowest EER / highest AUC
-    best_res = min(exp_results, key=lambda r: (r["eer_percent"], -r["auc"]))
+    with open(metadata_path, "w") as f:
+        json.dump(metadata_data, f, indent=2)
+
+    logger.info(f"✅ Promoted winning model '{best_res['model_label']}' to live predictor pipeline ({model_path.name}, {scaler_path.name}, {calibration_path.name}, {metadata_path.name}).")
+
     final_res = dict(best_res)
-
     final_res["model_label"] = "Selected Final Model"
+
 
     # Adversarial Stress Testing (Bot & Evasion Simulation)
     logger.info("\n" + "=" * 80)

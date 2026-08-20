@@ -175,12 +175,16 @@ def admin_login(payload: AdminLoginRequest):
 
 def _process_biometric_evaluation(db: Session, student, request: FeatureRequest):
     similarity_score = 100.0
-    has_typing_data = request.avg_dwell_time_ms > 0
+    features_dict = request.model_dump()
+    has_signal = has_usable_biometric_signal(features_dict)
     explanations = []
 
-    if student and has_typing_data:
+    if not has_signal:
+        return 0.0, 0.0, ["INSUFFICIENT_SIGNAL: Insufficient biometric timing captured during window."]
+
+    if student:
         profile = crud.get_behavior_profile(db, student.id)
-        if profile:
+        if profile and profile.enrollment_status in ("BASELINE_READY", "AUTHENTICATING"):
             similarity_score, explanations = compare_with_profile(
                 db,
                 profile,
@@ -190,16 +194,15 @@ def _process_biometric_evaluation(db: Session, student, request: FeatureRequest)
                 request.avg_mouse_velocity_px_s
             )
         else:
-            explanations = ["Profile training in progress - establishing baseline."]
+            explanations = ["Profile enrollment in progress — establishing behavioral baseline."]
 
         logger.debug(f"Similarity Score: {similarity_score}")
-        trust_score = calculate_trust_score(request.model_dump(), similarity_score)
+        trust_score = calculate_trust_score(features_dict, similarity_score)
     else:
-        trust_score = 100.0
-        if not has_typing_data:
-            explanations = ["Bypassed validation: No typing data collected during window."]
+        trust_score = calculate_trust_score(features_dict, 100.0)
 
     return trust_score, similarity_score, explanations
+
 
 
 def _log_security_audit(db: Session, session_id: str, trust_score: float, similarity_score: float, request: FeatureRequest):
