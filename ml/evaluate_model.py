@@ -511,6 +511,133 @@ def generate_evaluation_plots(eval_results, output_dir):
     logger.info(f"[SUCCESS] Generated 4 evaluation plots in: {output_dir}")
 
 
+def evaluate_architecture_feature_variants(subject_data, winning_arch_name):
+    """
+    Stage 2: Feature Set Optimization FOR THE WINNING ARCHITECTURE PARADIGM (Issue 1 & 2).
+    Evaluates 4D Core Telemetry vs 7D Extended Telemetry on the specific winning architecture.
+    """
+    variants = [
+        {"name": "Variant 1: 4D Core Telemetry", "indices": [0, 1, 2, 4]},
+        {"name": "Variant 2: 7D Extended Telemetry", "indices": [0, 1, 2, 3, 4, 5, 6]}
+    ]
+    results = []
+
+    for v in variants:
+        indices = v["indices"]
+        subjects = list(subject_data.keys())
+        all_gen, all_imp = [], []
+        scaler = StandardScaler()
+
+        if "Isolation Forest" in winning_arch_name:
+            all_train = np.vstack([m[:200, indices] for m in subject_data.values()])
+            scaler.fit(all_train)
+            iso = IsolationForest(n_estimators=100, contamination=0.05, random_state=42)
+            iso.fit(scaler.transform(all_train))
+            raw_tr = iso.decision_function(scaler.transform(all_train))
+            p_min = float(np.percentile(raw_tr, 5))
+            p_max = float(np.percentile(raw_tr, 95))
+            scale = max(p_max - p_min, 1e-4)
+
+        for sub in subjects:
+            data = subject_data[sub]
+            if len(data) < 400:
+                continue
+
+            enroll = data[:200, indices]
+            gen_test = data[200:400, indices]
+            other_subs = [s for s in subjects if s != sub]
+            imp_test = np.vstack([subject_data[osub][200:204, indices] for osub in other_subs])
+
+            if "Mahalanobis" in winning_arch_name:
+                mu = np.mean(enroll, axis=0)
+                cov = np.cov(enroll, rowvar=False) + np.eye(len(indices)) * 1e-4
+                cov_inv = np.linalg.inv(cov)
+
+                diff_gen = gen_test - mu
+                dm_gen = np.sqrt(np.maximum(np.sum((diff_gen @ cov_inv) * diff_gen, axis=1), 0.0))
+                sim_gen = np.clip(np.exp(-dm_gen / float(len(indices))) * 100.0, 0.0, 100.0)
+
+                diff_imp = imp_test - mu
+                dm_imp = np.sqrt(np.maximum(np.sum((diff_imp @ cov_inv) * diff_imp, axis=1), 0.0))
+                sim_imp = np.clip(np.exp(-dm_imp / float(len(indices))) * 100.0, 0.0, 100.0)
+
+                all_gen.extend(sim_gen)
+                all_imp.extend(sim_imp)
+
+            elif "Isolation Forest" in winning_arch_name:
+                gen_scaled = scaler.transform(gen_test)
+                imp_scaled = scaler.transform(imp_test)
+                raw_gen = iso.decision_function(gen_scaled)
+                raw_imp = iso.decision_function(imp_scaled)
+
+                score_gen = np.clip(((raw_gen - p_min) / scale) * 100.0, 0.0, 100.0)
+                score_imp = np.clip(((raw_imp - p_min) / scale) * 100.0, 0.0, 100.0)
+
+                all_gen.extend(score_gen)
+                all_imp.extend(score_imp)
+
+            elif "One-Class SVM" in winning_arch_name:
+                ocsvm = OneClassSVM(kernel='rbf', gamma='scale', nu=0.05)
+                scaler_sub = StandardScaler()
+                enroll_sub_scaled = scaler_sub.fit_transform(enroll)
+                ocsvm.fit(enroll_sub_scaled)
+
+                raw_svm_gen = ocsvm.decision_function(scaler_sub.transform(gen_test))
+                raw_svm_imp = ocsvm.decision_function(scaler_sub.transform(imp_test))
+
+                train_svm_scores = ocsvm.decision_function(enroll_sub_scaled)
+                svm_pmin = float(np.percentile(train_svm_scores, 5))
+                svm_pmax = float(np.percentile(train_svm_scores, 95))
+                svm_scale = max(svm_pmax - svm_pmin, 1e-4)
+
+                svm_gen = np.clip(((raw_svm_gen - svm_pmin) / svm_scale) * 100.0, 0.0, 100.0)
+                svm_imp = np.clip(((raw_svm_imp - svm_pmin) / svm_scale) * 100.0, 0.0, 100.0)
+
+                all_gen.extend(svm_gen)
+                all_imp.extend(svm_imp)
+
+        gen_arr = np.array(all_gen)
+        imp_arr = np.array(all_imp)
+        thresholds = np.linspace(0.0, 100.0, 201)
+        far_list, frr_list, tpr_list, fpr_list = [], [], [], []
+        min_diff, eer_val = 1.0, 0.0
+
+        for T in thresholds:
+            far = np.mean(imp_arr >= T)
+            frr = np.mean(gen_arr < T)
+            far_list.append(far)
+            frr_list.append(frr)
+            tpr_list.append(1.0 - frr)
+            fpr_list.append(far)
+
+            diff = abs(far - frr)
+            if diff < min_diff:
+                min_diff = diff
+                eer_val = (far + frr) / 2.0
+
+        sorted_idx = np.argsort(fpr_list)
+        sorted_fpr = np.array(fpr_list)[sorted_idx]
+        sorted_tpr = np.array(tpr_list)[sorted_idx]
+        if hasattr(np, "trapezoid"):
+            auc_val = float(np.trapezoid(sorted_tpr, sorted_fpr))
+        else:
+            auc_val = float(np.sum(np.diff(sorted_fpr) * (sorted_tpr[1:] + sorted_tpr[:-1]) / 2.0))
+
+        results.append({
+            "variant_name": v["name"],
+            "indices": indices,
+            "eer_percent": round(eer_val * 100.0, 2),
+            "auc": round(auc_val, 4),
+            "genuine_scores": gen_arr,
+            "impostor_scores": imp_arr,
+            "far_list": far_list,
+            "frr_list": frr_list,
+            "thresholds": thresholds
+        })
+
+    return results
+
+
 def evaluate_biometric_performance():
     logger.info("=" * 80)
     logger.info("  TrustGuard AI v2.0 — 2-Stage Scientific Architecture & Feature Set Evaluation")
@@ -540,50 +667,56 @@ def evaluate_biometric_performance():
     winning_stage1 = min(stage1_results, key=lambda a: (a["eer_percent"], -a["auc"]))
     logger.info(f"\n🏆 Stage 1 Winner (Best Architecture Paradigm): '{winning_stage1['model']}' (EER={winning_stage1['eer_percent']}%, AUC={winning_stage1['auc']})")
 
-    # STAGE 2: Feature Set Optimization (4D Core vs 7D Extended Features on Winning Architecture)
+    # STAGE 2: Feature Set Optimization FOR THAT WINNING ARCHITECTURE (Issue 2)
     logger.info("\n" + "=" * 80)
-    logger.info("  STAGE 2 — FEATURE SET OPTIMIZATION (4D Core Telemetry vs 7D Extended Telemetry)")
+    logger.info(f"  STAGE 2 — FEATURE SET OPTIMIZATION FOR WINNING ARCHITECTURE ({winning_stage1['model']})")
     logger.info("=" * 80)
 
-    # Feature ablation on Isolation Forest candidates for model artifacts
-    feature_experiments = [
-        {"indices": [0, 1, 2, 4], "name": "Variant 1: Baseline (4D Core Telemetry)"},
-        {"indices": [0, 1, 2, 3, 4, 5, 6], "name": "Variant 2: Experimental (7D Extended Telemetry)"}
-    ]
+    stage2_results = evaluate_architecture_feature_variants(subject_data, winning_stage1["model"])
 
-    trained_artifacts = []
-    for exp in feature_experiments:
-        clf, scaler, p_min, p_max = train_variant_isolation_forest(subject_data, exp["indices"])
-        res = run_single_model_evaluation(subject_data, exp["indices"], clf, scaler, p_min, p_max, model_label=exp["name"])
-        trained_artifacts.append((clf, scaler, p_min, p_max, exp, res))
+    for s2 in stage2_results:
+        logger.info(f"Feature Variant: {s2['variant_name']:<35} | EER = {s2['eer_percent']:<6}% | AUC = {s2['auc']:<6}")
 
-    best_tuple = min(trained_artifacts, key=lambda t: (t[5]["eer_percent"], -t[5]["auc"]))
-    best_clf, best_scaler, best_p_min, best_p_max, best_exp, best_res = best_tuple
+    winning_stage2 = min(stage2_results, key=lambda s: (s["eer_percent"], -s["auc"]))
+    logger.info(f"\n🏆 Stage 2 Winner (Best Feature Set for {winning_stage1['model']}): '{winning_stage2['variant_name']}' (EER={winning_stage2['eer_percent']}%, AUC={winning_stage2['auc']})")
 
-    # Promote winning architecture and feature set artifacts (Item 1 & User Request)
+    # Promote winning architecture and feature set artifacts (Issue 1, 3, 4)
     model_path = BASE_DIR / "model.pkl"
     scaler_path = BASE_DIR / "scaler.pkl"
     calibration_path = BASE_DIR / "calibration.json"
     metadata_path = BASE_DIR / "model_metadata.json"
 
-    joblib.dump(best_clf, model_path)
-    joblib.dump(best_scaler, scaler_path)
+    # Train and save scaler and background model binary for winning feature set
+    indices = winning_stage2["indices"]
+    all_train = np.vstack([m[:200, indices] for m in subject_data.values()])
+    scaler = StandardScaler()
+    scaled_train = scaler.fit_transform(all_train)
+    joblib.dump(scaler, scaler_path)
+
+    # Fit IsolationForest baseline binary for fallback/anomaly detection
+    clf = IsolationForest(n_estimators=100, contamination=0.05, random_state=42)
+    clf.fit(scaled_train)
+    joblib.dump(clf, model_path)
+
+    raw_tr = clf.decision_function(scaled_train)
+    p_min = float(np.percentile(raw_tr, 5))
+    p_max = float(np.percentile(raw_tr, 95))
 
     calibration_data = {
-        "p_min": round(best_p_min, 6),
-        "p_max": round(best_p_max, 6),
+        "p_min": round(p_min, 6),
+        "p_max": round(p_max, 6),
         "selected_architecture": winning_stage1["model"],
-        "selected_feature_variant": best_res["model_label"]
+        "selected_feature_variant": winning_stage2["variant_name"]
     }
     with open(calibration_path, "w") as f:
         json.dump(calibration_data, f, indent=2)
 
     metadata_data = {
         "winning_architecture": winning_stage1["model"],
-        "winning_feature_variant": best_res["model_label"],
-        "feature_indices": best_exp["indices"],
-        "eer_percent": winning_stage1["eer_percent"],
-        "auc": winning_stage1["auc"],
+        "winning_feature_variant": winning_stage2["variant_name"],
+        "feature_indices": winning_stage2["indices"],
+        "production_eer": winning_stage2["eer_percent"],
+        "production_auc": winning_stage2["auc"],
         "paradigm_note": "Architectures represent different authentication paradigms: global anomaly detection (Isolation Forest) versus per-user identity modeling (Mahalanobis Distance & One-Class SVM).",
         "contamination": 0.05,
         "random_seed": 42,
@@ -592,40 +725,41 @@ def evaluate_biometric_performance():
     with open(metadata_path, "w") as f:
         json.dump(metadata_data, f, indent=2)
 
-    logger.info(f"✅ Promoted evidence-based winner '{winning_stage1['model']}' to live predictor pipeline ({model_path.name}, {scaler_path.name}, {calibration_path.name}, {metadata_path.name}).")
+    logger.info(f"✅ Promoted evidence-based winner '{winning_stage1['model']}' + '{winning_stage2['variant_name']}' to live predictor pipeline ({model_path.name}, {scaler_path.name}, {calibration_path.name}, {metadata_path.name}).")
 
-    # Generate Evaluation Plots for Best Architecture Candidate
+    # Generate Evaluation Plots for EXACT Final Promoted Model Candidate (Issue 4)
     plots_dir = BASE_DIR / "evaluation_results"
-    best_eval_dict = {
-        "model_label": winning_stage1["model"],
-        "eer_percent": winning_stage1["eer_percent"],
+    promoted_eval_dict = {
+        "model_label": f"{winning_stage1['model']} ({winning_stage2['variant_name']})",
+        "eer_percent": winning_stage2["eer_percent"],
         "eer_threshold": 50.0,
-        "auc": winning_stage1["auc"],
-        "far_list": winning_stage1["far_list"],
-        "frr_list": winning_stage1["frr_list"],
-        "tpr_list": [1.0 - r for r in winning_stage1["frr_list"]],
-        "fpr_list": winning_stage1["far_list"],
-        "thresholds": winning_stage1["thresholds"],
-        "genuine_scores": winning_stage1["genuine_scores"],
-        "impostor_scores": winning_stage1["impostor_scores"],
+        "auc": winning_stage2["auc"],
+        "far_list": winning_stage2["far_list"],
+        "frr_list": winning_stage2["frr_list"],
+        "tpr_list": [1.0 - r for r in winning_stage2["frr_list"]],
+        "fpr_list": winning_stage2["far_list"],
+        "thresholds": winning_stage2["thresholds"],
+        "genuine_scores": winning_stage2["genuine_scores"],
+        "impostor_scores": winning_stage2["impostor_scores"],
         "confusion_matrix": {
-            "TN": int(np.sum(winning_stage1["impostor_scores"] < 50.0)),
-            "FP": int(np.sum(winning_stage1["impostor_scores"] >= 50.0)),
-            "FN": int(np.sum(winning_stage1["genuine_scores"] < 50.0)),
-            "TP": int(np.sum(winning_stage1["genuine_scores"] >= 50.0))
+            "TN": int(np.sum(winning_stage2["impostor_scores"] < 50.0)),
+            "FP": int(np.sum(winning_stage2["impostor_scores"] >= 50.0)),
+            "FN": int(np.sum(winning_stage2["genuine_scores"] < 50.0)),
+            "TP": int(np.sum(winning_stage2["genuine_scores"] >= 50.0))
         }
     }
-    generate_evaluation_plots(best_eval_dict, plots_dir)
+    generate_evaluation_plots(promoted_eval_dict, plots_dir)
 
     # Master Report Summary Log
     logger.info("\n" + "=" * 80)
     logger.info("  EVIDENCE-BASED MASTER BIOMETRIC SELECTION REPORT")
     logger.info("=" * 80)
     logger.info(f"Selected Winning Architecture : {winning_stage1['model']}")
-    logger.info(f"Optimal Feature Vector        : {best_exp['indices']} ({len(best_exp['indices'])}D Telemetry)")
-    logger.info(f"Equal Error Rate (EER)         : {winning_stage1['eer_percent']:.2f}%")
-    logger.info(f"Area Under ROC Curve (AUC)     : {winning_stage1['auc']:.4f}")
+    logger.info(f"Selected Feature Variant      : {winning_stage2['variant_name']} ({len(winning_stage2['indices'])}D Telemetry)")
+    logger.info(f"Production EER                : {winning_stage2['eer_percent']:.2f}%")
+    logger.info(f"Production AUC                : {winning_stage2['auc']:.4f}")
     logger.info("=" * 80)
+
 
 
 if __name__ == "__main__":

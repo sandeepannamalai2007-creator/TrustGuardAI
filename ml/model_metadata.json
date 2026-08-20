@@ -1,6 +1,6 @@
 {
   "winning_architecture": "Model B: Mahalanobis Distance (Identity Profile)",
-  "winning_feature_variant": "Variant 2: Experimental (7D Extended Telemetry)",
+  "winning_feature_variant": "Variant 2: 7D Extended Telemetry",
   "feature_indices": [
     0,
     1,
@@ -10,10 +10,10 @@
     5,
     6
   ],
-  "eer_percent": 26.6,
-  "auc": 0.8092,
+  "production_eer": 25.09,
+  "production_auc": 0.8168,
   "paradigm_note": "Architectures represent different authentication paradigms: global anomaly detection (Isolation Forest) versus per-user identity modeling (Mahalanobis Distance & One-Class SVM).",
   "contamination": 0.05,
   "random_seed": 42,
-  "training_timestamp": "2026-08-20T11:24:31.209702+00:00"
+  "training_timestamp": "2026-08-20T11:35:33.742501+00:00"
 }

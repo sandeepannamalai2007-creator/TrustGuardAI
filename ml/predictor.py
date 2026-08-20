@@ -48,9 +48,13 @@ def reload_model():
             with open(METADATA_PATH, "r") as f:
                 meta = json.load(f)
                 feature_indices = meta.get("feature_indices", [0, 1, 2, 4])
-                logger.info(f"✅ Model metadata loaded: winning_variant='{meta.get('winning_variant')}', feature_indices={feature_indices}")
+                winning_arch = meta.get("winning_architecture", "Unknown")
+                production_eer = meta.get("production_eer", 0.0)
+                production_auc = meta.get("production_auc", 0.0)
+                logger.info(f"✅ Promoted model metadata loaded: architecture='{winning_arch}', variant='{meta.get('winning_feature_variant')}', EER={production_eer}%, AUC={production_auc}")
         except (OSError, ValueError, KeyError) as e:
             logger.warning(f"Failed to load model metadata ({e}). Using defaults.")
+
 
 
 try:
