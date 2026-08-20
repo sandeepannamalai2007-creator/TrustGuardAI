@@ -59,13 +59,18 @@ except (OSError, FileNotFoundError, ValueError) as e:
     logger.error(f"❌ Failed to load ML model: {e}")
 
 
+class MLModelUnavailableException(Exception):
+    """Raised when the ML inference model or scaler is unavailable."""
+
+
 def predict_trust_score(features: dict) -> int:
     """
     Predicts a trust score (0-100) based on extracted telemetry features using empirical percentile calibration.
-    Dynamically constructs input feature vectors matching the promoted model variant.
+    If the model is unavailable, raises MLModelUnavailableException to enforce fail-closed degraded authentication.
     """
     if model is None or scaler is None:
-        return _fallback_trust_score(features)
+        logger.warning("[SECURITY DEGRADED] ML model or scaler unavailable. Enforcing fail-closed degraded mode.")
+        raise MLModelUnavailableException("ML Inference model unavailable.")
 
     try:
         avg_d = float(features.get("avg_dwell_time_ms", 0.0))
@@ -74,7 +79,8 @@ def predict_trust_score(features: dict) -> int:
         std_f = float(features.get("std_flight_time_ms", 0.0))
         spd = float(features.get("typing_speed_cps", 0.0))
         df_ratio = avg_d / (avg_f + 1e-5)
-        pause_freq = 1.0 if avg_f > 200.0 else 0.0
+        # Pause frequency (Point 1): Actual count/proportion of flight times > 200ms
+        pause_freq = float(features.get("pause_count", 0))
 
         all_features = [avg_d, std_d, avg_f, std_f, spd, df_ratio, pause_freq]
         input_vector = [all_features[idx] for idx in feature_indices]
@@ -86,7 +92,8 @@ def predict_trust_score(features: dict) -> int:
 
     except (ValueError, KeyError, AttributeError) as e:
         logger.error(f"Error predicting trust score: {e}")
-        return _fallback_trust_score(features)
+        raise MLModelUnavailableException(f"ML Inference error: {e}")
+
 
 
 

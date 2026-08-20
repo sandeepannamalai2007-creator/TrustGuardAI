@@ -72,12 +72,19 @@ def calculate_trust_score(
             entropy_penalty = max(0.5, entropy_val)
             logger.warning(f"[SECURITY ALERT] Low Shannon entropy detected: {entropy_val:.3f}")
 
-    ai_score = predict_trust_score(features)
+    from ml.predictor import MLModelUnavailableException
+
+    try:
+        ai_score = predict_trust_score(features)
+    except MLModelUnavailableException as e:
+        logger.warning(f"[SECURITY DEGRADED] ML model unavailable ({e}). Enforcing fail-closed degraded score of 35.0.")
+        ai_score = 35.0
 
     final_score = (
         ai_score * AI_WEIGHT +
         similarity_score * SIMILARITY_WEIGHT
     ) * entropy_penalty
+
 
     return round(final_score, 2)
 

@@ -60,8 +60,10 @@ class FeatureRequest(BaseModel):
 
     click_count: int = Field(..., ge=0)
     keystroke_count: int = Field(default=0, ge=0)
+    pause_count: int = Field(default=0, ge=0)
 
     session_duration_s: float = Field(..., ge=0)
+
 
 
 class FeatureResponse(BaseModel):
