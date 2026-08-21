@@ -106,8 +106,8 @@ def _get_next_archive_version_dir() -> Path:
 
 
 def _compute_dataset_hash(X: np.ndarray) -> str:
-    """Computes a SHA-256 hash of the feature matrix array bytes."""
-    return hashlib.sha256(X.tobytes()).hexdigest()[:16]
+    """🟠 Item 3: Computes full 64-character SHA-256 hash of dataset bytes."""
+    return hashlib.sha256(X.tobytes()).hexdigest()
 
 
 def _fetch_high_confidence_samples() -> tuple[np.ndarray, list[str], list[str]]:
@@ -191,33 +191,106 @@ def _fetch_high_confidence_samples() -> tuple[np.ndarray, list[str], list[str]]:
     return X, user_ids, unique_users
 
 
-def _evaluate_mahalanobis_candidate(X: np.ndarray) -> tuple[float, float, dict]:
+def _evaluate_mahalanobis_candidate(X: np.ndarray, user_ids: list[str], unique_users: list[str]) -> tuple[float, float, dict]:
+
     """
-    🔴 Item 2: True Subject-Disjoint Biometric EER & ROC-AUC Evaluation on Mahalanobis Architecture.
-    Fits candidate mean centroid mu_ref and inverse covariance matrix cov_inv_ref.
-    Evaluates candidate genuine vs impostor ROC curve and exact FAR/FRR EER intersection.
+    🔴 Item 1: True Subject-Disjoint Genuine + Cross-Subject Impostor Biometric Evaluation.
+    - Fits reference centroid & covariance per user/candidate dataset.
+    - Genuine scores: unseen 30% genuine test samples from subject S against S's profile (Label = 1).
+    - Cross-subject Impostor scores: samples from subjects O != S against S's profile (Label = 0).
+    - Calculates true FAR, FRR, EER intersection, and trapezoidal ROC-AUC.
     """
     mu_ref = np.mean(X, axis=0)
     cov = np.cov(X, rowvar=False) + np.eye(X.shape[1]) * 1e-4
     cov_inv_ref = np.linalg.inv(cov)
 
-    # Cross-validation genuine vs impostor split
-    n_samples = len(X)
-    split_idx = max(5, int(0.7 * n_samples))
-    gen_test = X[split_idx:] if split_idx < n_samples else X[:split_idx]
+    all_gen_scores, all_imp_scores = [], []
+    user_arr = np.array(user_ids)
+
+    if len(unique_users) > 1:
+        # True Subject-Disjoint & Cross-Subject Evaluation
+        for u in unique_users:
+            u_indices = np.where(user_arr == u)[0]
+            if len(u_indices) < 2:
+                continue
+
+            u_data = X[u_indices]
+            split_idx = max(1, int(0.7 * len(u_data)))
+            u_enroll = u_data[:split_idx]
+            u_gen_test = u_data[split_idx:] if split_idx < len(u_data) else u_data[:split_idx]
+
+            other_indices = np.where(user_arr != u)[0]
+            u_imp_test = X[other_indices]
+
+            # Fit user's reference
+            u_mu = np.mean(u_enroll, axis=0)
+            u_cov = np.cov(u_enroll, rowvar=False) + np.eye(X.shape[1]) * 1e-4
+            u_cov_inv = np.linalg.inv(u_cov)
+
+            # Genuine scores (Label = 1)
+            diff_g = u_gen_test - u_mu
+            dm_g = np.sqrt(np.maximum(np.sum((diff_g @ u_cov_inv) * diff_g, axis=1), 0.0))
+            sim_g = np.clip(np.exp(-dm_g / float(X.shape[1])) * 100.0, 0.0, 100.0)
+
+            # Cross-Subject Impostor scores (Label = 0)
+            diff_i = u_imp_test - u_mu
+            dm_i = np.sqrt(np.maximum(np.sum((diff_i @ u_cov_inv) * diff_i, axis=1), 0.0))
+            sim_i = np.clip(np.exp(-dm_i / float(X.shape[1])) * 100.0, 0.0, 100.0)
+
+            all_gen_scores.extend(sim_g)
+            all_imp_scores.extend(sim_i)
+
+    if not all_gen_scores:
+        # Single-subject fallback split
+        n_samples = len(X)
+        split_idx = max(5, int(0.7 * n_samples))
+        gen_test = X[split_idx:] if split_idx < n_samples else X[:split_idx]
+        imp_test = gen_test + np.random.normal(loc=50.0, scale=20.0, size=gen_test.shape)
+
+        diff_gen = gen_test - mu_ref
+        dm_gen = np.sqrt(np.maximum(np.sum((diff_gen @ cov_inv_ref) * diff_gen, axis=1), 0.0))
+        all_gen_scores = np.clip(np.exp(-dm_gen / float(X.shape[1])) * 100.0, 0.0, 100.0)
+
+        diff_imp = imp_test - mu_ref
+        dm_imp = np.sqrt(np.maximum(np.sum((diff_imp @ cov_inv_ref) * diff_imp, axis=1), 0.0))
+        all_imp_scores = np.clip(np.exp(-dm_imp / float(X.shape[1])) * 100.0, 0.0, 100.0)
+
+    from sklearn.metrics import roc_auc_score
+
+    sim_gen = np.array(all_gen_scores)
+    sim_imp = np.array(all_imp_scores)
+
+    labels = np.concatenate([np.ones(len(sim_gen)), np.zeros(len(sim_imp))])
+    scores = np.concatenate([sim_gen, sim_imp])
+
+    try:
+        auc_val = float(roc_auc_score(labels, scores))
+    except ValueError:
+        auc_val = 0.5
+
+    # Compute exact EER intersection
+    thresholds = np.linspace(0.0, 100.0, 201)
+    min_diff, eer_val = 1.0, 0.0
+
+    for T in thresholds:
+        far = float(np.mean(sim_imp >= T))
+        frr = float(np.mean(sim_gen < T))
+        diff = abs(far - frr)
+        if diff < min_diff:
+            min_diff = diff
+            eer_val = (far + frr) / 2.0
 
 
-    # Generate synthetic/cross-subject impostor test samples
-    imp_test = gen_test + np.random.normal(loc=50.0, scale=20.0, size=gen_test.shape)
+    model_dict = {
+        "mean": mu_ref,
+        "cov_inv": cov_inv_ref,
+        "feature_indices": [0, 1, 2, 3, 4, 5, 6],
+        "architecture": "Model B: Mahalanobis Distance (Identity Profile)",
+        "feature_variant": "Variant 2: 7D Extended Telemetry"
+    }
 
-    # Compute candidate Mahalanobis similarity scores
-    diff_gen = gen_test - mu_ref
-    dm_gen = np.sqrt(np.maximum(np.sum((diff_gen @ cov_inv_ref) * diff_gen, axis=1), 0.0))
-    sim_gen = np.clip(np.exp(-dm_gen / float(X.shape[1])) * 100.0, 0.0, 100.0)
+    return round(float(eer_val * 100.0), 2), round(float(auc_val), 4), model_dict
 
-    diff_imp = imp_test - mu_ref
-    dm_imp = np.sqrt(np.maximum(np.sum((diff_imp @ cov_inv_ref) * diff_imp, axis=1), 0.0))
-    sim_imp = np.clip(np.exp(-dm_imp / float(X.shape[1])) * 100.0, 0.0, 100.0)
 
     # Compute exact EER intersection & ROC-AUC
     thresholds = np.linspace(0.0, 100.0, 201)
@@ -308,7 +381,8 @@ def retrain_model(force: bool = False) -> dict:
             logger.warning(f"Could not load metadata ({e}); using baseline metrics.")
 
     # 🔴 Item 1 & 2: Train candidate Mahalanobis reference & compute true biometric EER/AUC
-    cand_eer, cand_auc, cand_model_dict = _evaluate_mahalanobis_candidate(X)
+    cand_eer, cand_auc, cand_model_dict = _evaluate_mahalanobis_candidate(X, _user_ids, unique_users)
+
 
     scaler = StandardScaler()
     scaler.fit(X)
@@ -459,7 +533,8 @@ def emergency_model_override(admin_user: str = "admin_override") -> dict:
     if n_samples == 0:
         return {"success": False, "message": "Emergency override failed — 0 valid samples available."}
 
-    cand_eer, cand_auc, cand_model_dict = _evaluate_mahalanobis_candidate(X)
+    cand_eer, cand_auc, cand_model_dict = _evaluate_mahalanobis_candidate(X, _user_ids, unique_users)
+
     scaler = StandardScaler()
     scaler.fit(X)
 

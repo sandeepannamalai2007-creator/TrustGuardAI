@@ -14,9 +14,13 @@ from ml.predictor import MLModelUnavailableException, predict_trust_score
 
 def test_candidate_better_promoted(monkeypatch):
     """Test candidate model passing performance gate is promoted."""
-    dummy_X = np.random.uniform(100.0, 150.0, (50, 7))
-    dummy_users = ["user_1"] * 25 + ["user_2"] * 25
-    dummy_uniques = ["user_1", "user_2"]
+    np.random.seed(42)
+    u1_data = np.random.normal(loc=[110.0, 10.0, 140.0, 20.0, 4.5, 0.8, 0.0], scale=[1.0, 0.2, 1.5, 0.5, 0.05, 0.01, 0.0], size=(50, 7))
+    u2_data = np.random.normal(loc=[200.0, 30.0, 250.0, 40.0, 2.0, 0.4, 2.0], scale=[1.0, 0.2, 1.5, 0.5, 0.05, 0.01, 0.0], size=(50, 7))
+    u3_data = np.random.normal(loc=[70.0, 5.0, 90.0, 10.0, 7.0, 1.2, 0.0], scale=[1.0, 0.2, 1.5, 0.5, 0.05, 0.01, 0.0], size=(50, 7))
+    dummy_X = np.vstack([u1_data, u2_data, u3_data])
+    dummy_users = ["user_1"] * 50 + ["user_2"] * 50 + ["user_3"] * 50
+    dummy_uniques = ["user_1", "user_2", "user_3"]
 
     monkeypatch.setattr(retrain_mod, "_fetch_high_confidence_samples", lambda: (dummy_X, dummy_users, dummy_uniques))
 
@@ -24,6 +28,8 @@ def test_candidate_better_promoted(monkeypatch):
     assert res.get("triggered") is True
     assert res.get("promoted") is True
     assert res.get("model_version") is not None
+
+
 
 
 def test_candidate_worse_rejected(monkeypatch):

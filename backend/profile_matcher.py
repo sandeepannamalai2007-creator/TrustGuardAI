@@ -10,98 +10,106 @@ from sqlalchemy.orm import Session
 def compare_with_profile(
     db: Session,
     profile: BehaviorProfile,
-    avg_dwell_time: float,
-    avg_flight_time: float,
-    typing_speed: float,
-    mouse_velocity: float,
+    avg_dwell_time: float = 0.0,
+    avg_flight_time: float = 0.0,
+    typing_speed: float = 0.0,
+    mouse_velocity: float = 0.0,
+    std_dwell_time: float = 0.0,
+    std_flight_time: float = 0.0,
+    pause_count: float = 0.0,
+    features_dict: dict | None = None
 ):
     """
-    Compare current behaviour with the stored behaviour profile using Mahalanobis distance.
-    Returns a tuple: (similarity_score from 0 to 100, list of parameter explanation strings).
+    🔴 Item 2: Compare current behaviour with stored profile using 7D Extended Telemetry Mahalanobis distance.
+    1. avg_dwell_time
+    2. std_dwell_time
+    3. avg_flight_time
+    4. std_flight_time
+    5. typing_speed
+    6. df_ratio (avg_dwell / (avg_flight + 1e-5))
+    7. pause_count
+    Returns tuple: (similarity_score from 0 to 100, list of parameter explanation strings).
     """
-    
-    # 1. Fetch user's historical genuine samples
+    if features_dict:
+        avg_d = float(features_dict.get("avg_dwell_time_ms", avg_dwell_time))
+        std_d = float(features_dict.get("std_dwell_time_ms", std_dwell_time))
+        avg_f = float(features_dict.get("avg_flight_time_ms", avg_flight_time))
+        std_f = float(features_dict.get("std_flight_time_ms", std_flight_time))
+        spd = float(features_dict.get("typing_speed_cps", typing_speed))
+        p_cnt = float(features_dict.get("pause_count", pause_count))
+    else:
+        avg_d = float(avg_dwell_time)
+        std_d = float(std_dwell_time)
+        avg_f = float(avg_flight_time)
+        std_f = float(std_flight_time)
+        spd = float(typing_speed)
+        p_cnt = float(pause_count)
+
+    df_ratio = avg_d / (avg_f + 1e-5)
+    x_7d = np.array([avg_d, std_d, avg_f, std_f, spd, df_ratio, p_cnt])
+
+    # Default 7D standard deviations for fallback variance matrix
+    default_stds_7d = np.array([20.0, 5.0, 40.0, 10.0, 1.5, 0.5, 1.0])
+
     history = crud.get_student_feature_history(db, profile.student_id)
-    
-    # Pack current sample vector
-    x = np.array([avg_dwell_time, avg_flight_time, typing_speed, mouse_velocity])
-    
-    # Baseline mean vector from profile database averages
-    mu = np.array([
-        profile.avg_dwell_time,
-        profile.avg_flight_time,
-        profile.typing_speed,
-        profile.mouse_velocity
-    ])
-    
-    # Default standard deviations (DS-StrongPassword baseline estimates for fallback)
-    default_stds = np.array([20.0, 40.0, 2.0, 80.0])
-    
-    # 2. Compute covariance matrix
-    # We require at least 5 genuine historical samples to construct a reliable covariance matrix
+
     if len(history) >= 5:
         history_vectors = []
         for log in history:
-            # Handle possible null velocity logs from earlier versions gracefully
-            v = log.avg_mouse_velocity if log.avg_mouse_velocity is not None else profile.mouse_velocity
-            history_vectors.append([
-                log.avg_dwell,
-                log.avg_flight,
-                log.typing_speed,
-                v
-            ])
-            
+            ld_avg = log.avg_dwell
+            ld_std = getattr(log, "std_dwell", 10.0) if getattr(log, "std_dwell", None) is not None else 10.0
+            lf_avg = log.avg_flight
+            lf_std = getattr(log, "std_flight", 20.0) if getattr(log, "std_flight", None) is not None else 20.0
+            lspd = log.typing_speed
+            ldf = ld_avg / (lf_avg + 1e-5)
+            lpc = getattr(log, "pause_count", 0.0) if getattr(log, "pause_count", None) is not None else 0.0
+
+            history_vectors.append([ld_avg, ld_std, lf_avg, lf_std, lspd, ldf, lpc])
+
         history_arr = np.array(history_vectors)
-        cov = np.cov(history_arr, rowvar=False)
-        
-        # Add a tiny shrinkage regularization (diagonal loading) to avoid singularity
-        cov += np.eye(4) * 1e-4
+        mu_7d = np.mean(history_arr, axis=0)
+        cov_7d = np.cov(history_arr, rowvar=False) + np.eye(7) * 1e-4
     else:
-        # Fallback: diagonal covariance using default parameter variances
-        cov = np.diag(default_stds ** 2)
-        
+        # Fallback baseline mean from profile record
+        prof_avg_d = profile.avg_dwell_time if profile.avg_dwell_time > 0 else 110.0
+        prof_avg_f = profile.avg_flight_time if profile.avg_flight_time > 0 else 140.0
+        prof_spd = profile.typing_speed if profile.typing_speed > 0 else 4.5
+        prof_df = prof_avg_d / (prof_avg_f + 1e-5)
+
+        mu_7d = np.array([prof_avg_d, 10.0, prof_avg_f, 20.0, prof_spd, prof_df, 0.0])
+        cov_7d = np.diag(default_stds_7d ** 2)
+
     try:
-        inv_cov = np.linalg.inv(cov)
-        diff = x - mu
+        inv_cov = np.linalg.inv(cov_7d)
+        diff = x_7d - mu_7d
         dm2 = diff.T @ inv_cov @ diff
         dm = np.sqrt(max(dm2, 0.0))
     except (np.linalg.LinAlgError, ValueError, TypeError):
+        diff = x_7d - mu_7d
+        dm = np.sqrt(np.sum((diff ** 2) / (default_stds_7d ** 2)))
 
-        # Ultimate fallback: Normalized Euclidean Distance (assuming independent default variances)
-        diff = x - mu
-        var = default_stds ** 2
-        dm = np.sqrt(np.sum((diff ** 2) / var))
+    # Map 7D Mahalanobis distance to Similarity Score (0 to 100%)
+    similarity_score = math.exp(-dm / 7.0) * 100.0
 
-    # 3. Map Mahalanobis distance to Similarity Score (0 to 100%)
-    # Distance mapping works perfectly with: Similarity = exp(-D_M / 2.0) * 100.0
-    similarity_score = math.exp(-dm / 2.0) * 100.0
-    
-    # 4. Generate per-feature deviation logs for UI transparency
-    # Deviation percentage is calculated relative to default standard deviation for clarity
     explanations = []
-    
-    features = [
-        ("Dwell time", avg_dwell_time, profile.avg_dwell_time, default_stds[0]),
-        ("Flight time", avg_flight_time, profile.avg_flight_time, default_stds[1]),
-        ("Typing speed", typing_speed, profile.typing_speed, default_stds[2]),
-        ("Mouse velocity", mouse_velocity, profile.mouse_velocity, default_stds[3])
+    features_desc = [
+        ("Dwell time", avg_d, mu_7d[0], default_stds_7d[0]),
+        ("Dwell std", std_d, mu_7d[1], default_stds_7d[1]),
+        ("Flight time", avg_f, mu_7d[2], default_stds_7d[2]),
+        ("Flight std", std_f, mu_7d[3], default_stds_7d[3]),
+        ("Typing speed", spd, mu_7d[4], default_stds_7d[4]),
+        ("Dwell/Flight ratio", df_ratio, mu_7d[5], default_stds_7d[5]),
+        ("Pause count", p_cnt, mu_7d[6], default_stds_7d[6])
     ]
-    
-    for name, current, expected, std in features:
-        if expected == 0:
-            explanations.append(f"{name} profile not initialized.")
-            continue
-            
+
+    for name, current, expected, std in features_desc:
         delta = abs(current - expected)
-        dev_pct = (delta / expected) * 100.0
-        # Calculate how many standard deviations off the feature is
-        stds_off = delta / std
-        
-        explanations.append(
-            f"{name} is {stds_off:.1f} SD off baseline (deviated {dev_pct:.1f}%)"
-        )
-        
-    return round(similarity_score, 2), explanations
+        stds_off = delta / max(std, 1e-4)
+        dev_pct = (delta / max(expected, 1e-4)) * 100.0
+        explanations.append(f"{name} is {stds_off:.1f} SD off baseline (deviated {dev_pct:.1f}%)")
+
+    return round(float(similarity_score), 2), explanations
+
 
 
 def compute_adaptive_threshold(db: Session, profile: BehaviorProfile) -> float:

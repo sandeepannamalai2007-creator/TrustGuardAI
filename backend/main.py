@@ -188,11 +188,9 @@ def _process_biometric_evaluation(db: Session, student, request: FeatureRequest)
             similarity_score, explanations = compare_with_profile(
                 db,
                 profile,
-                request.avg_dwell_time_ms,
-                request.avg_flight_time_ms,
-                request.typing_speed_cps,
-                request.avg_mouse_velocity_px_s
+                features_dict=features_dict
             )
+
         else:
             explanations = ["Profile enrollment in progress — establishing behavioral baseline."]
 
