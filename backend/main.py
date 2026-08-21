@@ -1,6 +1,7 @@
 import logging
 import os
 import sys
+from datetime import datetime, timezone
 
 import crud
 from api_models import (
@@ -16,7 +17,7 @@ from api_models import (
     StudentResponse,
 )
 from auth import create_access_token, verify_admin_token, verify_session_token
-from config import settings
+from config import settings, validate_production_config
 from database import Base, engine, get_db
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -35,6 +36,7 @@ from session_manager import (
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from trust_engine import (
     calculate_trust_score,
@@ -55,11 +57,15 @@ Base.metadata.create_all(bind=engine)
 
 limiter = Limiter(key_func=get_remote_address)
 
+
 from contextlib import asynccontextmanager
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # 🔴 Items 1 & 2: Validate production config at startup
+    validate_production_config(settings)
+
     if settings.ADMIN_PIN == "1234":
         logger.critical("[SECURITY WARNING] TRUSTGUARD_ADMIN_PIN is using default '1234'. Set this env var before production deployment.")
     if "change-in-production" in settings.JWT_SECRET_KEY:
@@ -78,39 +84,99 @@ app.add_middleware(MetricsMiddleware)
 if settings.ENABLE_HTTPS_REDIRECT:
     app.add_middleware(HTTPSRedirectMiddleware)
 
-# Scope CORS to trusted origins from settings
+# 🔴 Item 3: Tighten CORS in production (exclude 'null' and '*')
+allowed_origins = [o for o in settings.ALLOWED_ORIGINS if o != "null" and o != "*"] if settings.ENV.lower() == "production" else settings.ALLOWED_ORIGINS
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.ALLOWED_ORIGINS,
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Content-Type", "X-Admin-PIN", "Authorization"],
 )
 
 
+# 🔴 Item 4: Security HTTP Response Headers Middleware
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response: Response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Content-Security-Policy"] = "default-src 'self'; frame-ancestors 'none';"
+    response.headers["Permissions-Policy"] = "geolocation=(), camera=(), microphone=()"
+    if settings.ENABLE_HTTPS_REDIRECT or request.url.scheme == "https":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
 
 
-from fastapi.staticfiles import StaticFiles
+# 🔴 Item 6: Liveness and Readiness Health Probes
+@app.get("/live")
+def liveness_probe():
+    """Liveness probe: verifies process execution."""
+    return {"status": "alive", "timestamp": datetime.now(timezone.utc).isoformat()}
 
-frontend_dir = os.path.join(os.path.dirname(__file__), "..", "frontend")
 
+@app.get("/ready")
+def readiness_probe(db: Session = Depends(get_db)):
+    """
+    Readiness probe: verifies database connectivity, ML model readiness, and session state.
+    """
+    prune_expired_sessions()
+    db_ok = False
+    try:
+        db.execute(text("SELECT 1"))
+        db_ok = True
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"Database readiness check failed: {e}")
+
+    from ml.predictor import model as ml_model
+    ml_ok = ml_model is not None or (os.path.exists(os.path.join(os.path.dirname(__file__), "..", "ml", "mahalanobis_reference.pkl")))
+
+    status_code = 200 if (db_ok and ml_ok) else 503
+    payload = {
+        "status": "ready" if status_code == 200 else "unready",
+        "database": "connected" if db_ok else "disconnected",
+        "ml_model": "loaded" if ml_ok else "unloaded",
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+    if status_code != 200:
+        raise HTTPException(status_code=503, detail=payload)
+    return payload
 
 
 @app.get("/health")
-def health():
-    prune_expired_sessions()
-    return {
-        "status": "Healthy"
-    }
+def health(db: Session = Depends(get_db)):
+    """Backward compatible alias to /ready probe."""
+    return readiness_probe(db=db)
 
 
-
+# 🔴 Item 5: Protect /metrics in production
 @app.get("/metrics")
-def get_metrics():
+def get_metrics(
+    x_admin_pin: str = Header(None, alias="X-Admin-PIN"),
+    authorization: str = Header(None)
+):
     """
-    Prometheus telemetry endpoint for scraping application performance and trust score metrics.
+    Prometheus telemetry endpoint.
+    Requires Admin PIN or Admin JWT token when in production mode.
     """
+    if settings.ENV.lower() == "production":
+        is_authenticated = (x_admin_pin == settings.ADMIN_PIN)
+        if not is_authenticated and authorization and authorization.startswith("Bearer "):
+            token = authorization.split(" ")[1]
+            try:
+                verify_admin_token(token)
+                is_authenticated = True
+            except Exception:  # noqa: BLE001
+                is_authenticated = False
+
+
+        if not is_authenticated:
+            raise HTTPException(status_code=403, detail="Access denied to /metrics in production. Admin authentication required.")
+
     return Response(content=metrics_collector.generate_prometheus_output(), media_type="text/plain; version=0.0.4")
+
 
 
 @app.post(
@@ -584,6 +650,9 @@ def trigger_emergency_model_override(
 
 
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+
+frontend_dir = os.path.join(os.path.dirname(__file__), "..", "frontend")
 
 
 @app.get("/")
@@ -595,6 +664,7 @@ def serve_root():
 
 # Serve Frontend Web Application (capture.html, style.css, script.js, modules/*.js)
 if os.path.exists(frontend_dir):
-    app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")
+    app.mount("/app", StaticFiles(directory=frontend_dir, html=True), name="frontend")
+
 
 
