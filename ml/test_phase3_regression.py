@@ -138,7 +138,7 @@ def test_previous_model_unavailable_fail_closed(monkeypatch):
     """Test predict_trust_score raises MLModelUnavailableException when model is missing."""
     import ml.predictor as predictor_mod
     monkeypatch.setattr(predictor_mod, "model", None)
-    monkeypatch.setattr(predictor_mod, "scaler", None)
 
     with pytest.raises(MLModelUnavailableException):
         predict_trust_score({"avg_dwell_time_ms": 120.0, "avg_flight_time_ms": 150.0})
+

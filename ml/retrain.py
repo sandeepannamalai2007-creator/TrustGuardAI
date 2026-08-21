@@ -31,7 +31,6 @@ BACKEND_DIR = BASE_DIR.parent / "backend"
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from sklearn.preprocessing import StandardScaler
 
 from ml.predictor import reload_model
 
@@ -340,17 +339,13 @@ def retrain_model(force: bool = False) -> dict:
 
     # 🔴 Item 1 & 2: Train candidate Mahalanobis reference & compute true biometric EER/AUC
     cand_eer, cand_auc, cand_model_dict = _evaluate_mahalanobis_candidate(X, _user_ids, unique_users)
-
-
-    scaler = StandardScaler()
-    scaler.fit(X)
-
     dataset_hash = _compute_dataset_hash(X)
 
-    # Save candidate artifacts in CANDIDATE_DIR
+
+
+    # Save candidate artifacts in CANDIDATE_DIR (raw 7D features, no scaler)
     joblib.dump(cand_model_dict, CANDIDATE_DIR / "mahalanobis_reference.pkl")
     joblib.dump(cand_model_dict, CANDIDATE_DIR / "model.pkl")
-    joblib.dump(scaler, CANDIDATE_DIR / "scaler.pkl")
 
     # 🔴 Item 3: Performance Gate with Strict Tolerance Capping (force=True CANNOT bypass)
     eer_tolerance = 0.50
@@ -416,7 +411,6 @@ def retrain_model(force: bool = False) -> dict:
     # Write to archive
     joblib.dump(cand_model_dict, archive_ver_dir / "mahalanobis_reference.pkl")
     joblib.dump(cand_model_dict, archive_ver_dir / "model.pkl")
-    joblib.dump(scaler, archive_ver_dir / "scaler.pkl")
     with open(archive_ver_dir / "calibration.json", "w") as f:
         json.dump(calibration_data, f, indent=2)
     with open(archive_ver_dir / "model_metadata.json", "w") as f:
@@ -425,7 +419,6 @@ def retrain_model(force: bool = False) -> dict:
     # Write to production artifacts directory
     joblib.dump(cand_model_dict, PROD_DIR / "mahalanobis_reference.pkl")
     joblib.dump(cand_model_dict, PROD_DIR / "model.pkl")
-    joblib.dump(scaler, PROD_DIR / "scaler.pkl")
     with open(PROD_DIR / "calibration.json", "w") as f:
         json.dump(calibration_data, f, indent=2)
     with open(PROD_DIR / "model_metadata.json", "w") as f:
@@ -452,11 +445,11 @@ def retrain_model(force: bool = False) -> dict:
     # Copy to root production paths for backwards compatibility
     joblib.dump(cand_model_dict, MAHALANOBIS_REF_PATH)
     joblib.dump(cand_model_dict, MODEL_PATH)
-    joblib.dump(scaler, SCALER_PATH)
     with open(CALIBRATION_PATH, "w") as f:
         json.dump(calibration_data, f, indent=2)
     with open(METADATA_PATH, "w") as f:
         json.dump(version_metadata, f, indent=2)
+
 
     for f in CANDIDATE_DIR.glob("*"):
         if f.is_file():
@@ -493,9 +486,6 @@ def emergency_model_override(admin_user: str = "admin_override") -> dict:
 
     cand_eer, cand_auc, cand_model_dict = _evaluate_mahalanobis_candidate(X, _user_ids, unique_users)
 
-    scaler = StandardScaler()
-    scaler.fit(X)
-
     archive_ver_dir = _get_next_archive_version_dir()
     version_name = archive_ver_dir.name
     dataset_hash = _compute_dataset_hash(X)
@@ -522,7 +512,6 @@ def emergency_model_override(admin_user: str = "admin_override") -> dict:
 
     joblib.dump(cand_model_dict, archive_ver_dir / "mahalanobis_reference.pkl")
     joblib.dump(cand_model_dict, archive_ver_dir / "model.pkl")
-    joblib.dump(scaler, archive_ver_dir / "scaler.pkl")
     with open(archive_ver_dir / "calibration.json", "w") as f:
         json.dump(calibration_data, f, indent=2)
     with open(archive_ver_dir / "model_metadata.json", "w") as f:
@@ -530,7 +519,6 @@ def emergency_model_override(admin_user: str = "admin_override") -> dict:
 
     joblib.dump(cand_model_dict, PROD_DIR / "mahalanobis_reference.pkl")
     joblib.dump(cand_model_dict, PROD_DIR / "model.pkl")
-    joblib.dump(scaler, PROD_DIR / "scaler.pkl")
     with open(PROD_DIR / "calibration.json", "w") as f:
         json.dump(calibration_data, f, indent=2)
     with open(PROD_DIR / "model_metadata.json", "w") as f:
@@ -556,7 +544,6 @@ def emergency_model_override(admin_user: str = "admin_override") -> dict:
 
     joblib.dump(cand_model_dict, MAHALANOBIS_REF_PATH)
     joblib.dump(cand_model_dict, MODEL_PATH)
-    joblib.dump(scaler, SCALER_PATH)
     with open(CALIBRATION_PATH, "w") as f:
         json.dump(calibration_data, f, indent=2)
     with open(METADATA_PATH, "w") as f:
@@ -607,7 +594,8 @@ def rollback_model(target_version: str | None = None) -> dict:
     restored_version = selected_dir.name
     logger.info(f"[ROLLBACK] Rolling back active production model from {current_version} to {restored_version}...")
 
-    for fname in ["mahalanobis_reference.pkl", "model.pkl", "scaler.pkl", "calibration.json", "model_metadata.json"]:
+    for fname in ["mahalanobis_reference.pkl", "model.pkl", "calibration.json", "model_metadata.json"]:
+
         src = selected_dir / fname
         if src.exists():
             shutil.copy2(src, PROD_DIR / fname)

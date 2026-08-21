@@ -30,7 +30,8 @@ def reload_model():
     Hot-reloads model, scaler, empirical calibration parameters, and model metadata from disk.
     Guided by active_model.json activation metadata (Item 10).
     """
-    global model, scaler, calibration_p_min, calibration_p_max, feature_indices
+    global model, calibration_p_min, calibration_p_max, feature_indices
+
     if os.path.exists(ACTIVE_MODEL_PATH):
         try:
             with open(ACTIVE_MODEL_PATH, "r") as f:
@@ -39,10 +40,10 @@ def reload_model():
         except (OSError, ValueError, KeyError) as e:
             logger.warning(f"Could not load active_model.json ({e}).")
 
-    if os.path.exists(MODEL_PATH) and os.path.exists(SCALER_PATH):
+    if os.path.exists(MODEL_PATH):
         model = joblib.load(MODEL_PATH)
-        scaler = joblib.load(SCALER_PATH)
-        logger.info("✅ TrustGuard AI model hot-reloaded successfully.")
+        logger.info("✅ TrustGuard AI Mahalanobis reference model hot-reloaded successfully.")
+
 
     if os.path.exists(CALIBRATION_PATH):
         try:
