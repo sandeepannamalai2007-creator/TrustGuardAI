@@ -1,0 +1,44 @@
+[
+  {
+    "timestamp": "2026-08-21T04:31:01.355799+00:00",
+    "requesting_admin": "system_admin",
+    "candidate_version": "v005",
+    "training_sample_count": 50,
+    "training_user_count": 2,
+    "dataset_hash": "0f23d57420d8dfee",
+    "old_eer": 26.67,
+    "new_eer": 46.0,
+    "old_auc": 0.83,
+    "new_auc": 0.7611,
+    "decision": "PROMOTED",
+    "reason": "[RETRAIN PROMOTED] Candidate model v005 passed performance gate (EER=46.0%, AUC=0.7611) and was promoted to production on 50 samples across 2 users."
+  },
+  {
+    "timestamp": "2026-08-21T04:31:05.741681+00:00",
+    "requesting_admin": "system_admin",
+    "candidate_version": "candidate_temp",
+    "training_sample_count": 25,
+    "training_user_count": 1,
+    "dataset_hash": "e5636651d89ab594",
+    "old_eer": 46.0,
+    "new_eer": 52.0,
+    "old_auc": 0.7611,
+    "new_auc": 0.7661,
+    "decision": "REJECTED",
+    "reason": "[RETRAIN REJECTED] Candidate model (EER=52.0%, AUC=0.7661) failed performance gate against production v005 (EER=46.0%, AUC=0.7611). Candidate discarded."
+  },
+  {
+    "timestamp": "2026-08-21T04:31:19.059395+00:00",
+    "requesting_admin": "system_admin",
+    "candidate_version": "v007",
+    "training_sample_count": 30,
+    "training_user_count": 1,
+    "dataset_hash": "33a6d8c13c5e41b3",
+    "old_eer": 46.0,
+    "new_eer": 43.33,
+    "old_auc": 0.7611,
+    "new_auc": 0.7726,
+    "decision": "PROMOTED",
+    "reason": "[RETRAIN PROMOTED] Candidate model v007 passed performance gate (EER=43.33%, AUC=0.7726) and was promoted to production on 30 samples across 1 users."
+  }
+]

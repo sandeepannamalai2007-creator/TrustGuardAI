@@ -54,7 +54,10 @@ SCALER_PATH = BASE_DIR / "scaler.pkl"
 CALIBRATION_PATH = BASE_DIR / "calibration.json"
 METADATA_PATH = BASE_DIR / "model_metadata.json"
 
-MIN_NEW_SAMPLES = 20  # Minimum high-confidence samples required to evaluate candidate
+AUDIT_LOG_PATH = ARTIFACTS_DIR / "retrain_audit_log.json"
+ACTIVE_MODEL_PATH = PROD_DIR / "active_model.json"
+MIN_NEW_SAMPLES = 20
+
 
 
 def _ensure_dirs():
@@ -64,6 +67,33 @@ def _ensure_dirs():
 
 
 _ensure_dirs()
+
+
+def _write_active_model_metadata(active_version: str, previous_version: str, reason: str):
+    data = {
+        "active_version": active_version,
+        "previous_version": previous_version,
+        "activated_at": datetime.now(timezone.utc).isoformat(),
+        "activation_reason": reason
+    }
+    with open(ACTIVE_MODEL_PATH, "w") as f:
+        json.dump(data, f, indent=2)
+    with open(BASE_DIR / "active_model.json", "w") as f:
+        json.dump(data, f, indent=2)
+
+
+def _record_retrain_audit_log(entry: dict):
+    logs = []
+    if AUDIT_LOG_PATH.exists():
+        try:
+            with open(AUDIT_LOG_PATH, "r") as f:
+                logs = json.load(f)
+        except (OSError, ValueError, KeyError):
+            logs = []
+    logs.append(entry)
+    with open(AUDIT_LOG_PATH, "w") as f:
+        json.dump(logs, f, indent=2)
+
 
 
 def _get_next_archive_version_dir() -> Path:
@@ -251,6 +281,21 @@ def retrain_model(force: bool = False) -> dict:
             f"against production {prod_version} (EER={prod_eer}%, AUC={prod_auc}). Candidate discarded."
         )
         logger.info(msg)
+        # Item 11: Audit log recording for REJECTED candidate
+        _record_retrain_audit_log({
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "requesting_admin": "system_admin",
+            "candidate_version": "candidate_temp",
+            "training_sample_count": n_samples,
+            "training_user_count": n_users,
+            "dataset_hash": dataset_hash,
+            "old_eer": prod_eer,
+            "new_eer": cand_eer,
+            "old_auc": prod_auc,
+            "new_auc": cand_auc,
+            "decision": "REJECTED",
+            "reason": msg
+        })
         # Clean up candidate directory
         for f in CANDIDATE_DIR.glob("*"):
             if f.is_file():
@@ -304,6 +349,26 @@ def retrain_model(force: bool = False) -> dict:
     with open(PROD_DIR / "model_metadata.json", "w") as f:
         json.dump(version_metadata, f, indent=2)
 
+    # Item 10: Write active model registry
+    _write_active_model_metadata(active_version=version_name, previous_version=prod_version, reason="PROMOTED_FROM_RETRAIN")
+
+    # Item 11: Record audit log entry for PROMOTED candidate
+    msg = f"[RETRAIN PROMOTED] Candidate model {version_name} passed performance gate (EER={cand_eer}%, AUC={cand_auc}) and was promoted to production on {n_samples} samples across {n_users} users."
+    _record_retrain_audit_log({
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "requesting_admin": "system_admin",
+        "candidate_version": version_name,
+        "training_sample_count": n_samples,
+        "training_user_count": n_users,
+        "dataset_hash": dataset_hash,
+        "old_eer": prod_eer,
+        "new_eer": cand_eer,
+        "old_auc": prod_auc,
+        "new_auc": cand_auc,
+        "decision": "PROMOTED",
+        "reason": msg
+    })
+
     # Copy to root production paths for backwards compatibility
     joblib.dump(cand_clf, MODEL_PATH)
     joblib.dump(scaler, SCALER_PATH)
@@ -319,9 +384,8 @@ def retrain_model(force: bool = False) -> dict:
 
     # Hot-reload in process
     reload_model()
-
-    msg = f"[RETRAIN PROMOTED] Candidate model {version_name} passed performance gate (EER={cand_eer}%, AUC={cand_auc}) and was promoted to production on {n_samples} samples across {n_users} users."
     logger.info(msg)
+
 
     return {
         "triggered": True,

@@ -23,11 +23,22 @@ calibration_p_max = 0.10
 feature_indices = [0, 1, 2, 4]
 
 
+ACTIVE_MODEL_PATH = os.path.join(BASE_DIR, "artifacts", "production", "active_model.json")
+
 def reload_model():
     """
     Hot-reloads model, scaler, empirical calibration parameters, and model metadata from disk.
+    Guided by active_model.json activation metadata (Item 10).
     """
     global model, scaler, calibration_p_min, calibration_p_max, feature_indices
+    if os.path.exists(ACTIVE_MODEL_PATH):
+        try:
+            with open(ACTIVE_MODEL_PATH, "r") as f:
+                act = json.load(f)
+                logger.info(f"✅ Active Model Registry: version='{act.get('active_version')}', activated_at='{act.get('activated_at')}', previous='{act.get('previous_version')}'")
+        except (OSError, ValueError, KeyError) as e:
+            logger.warning(f"Could not load active_model.json ({e}).")
+
     if os.path.exists(MODEL_PATH) and os.path.exists(SCALER_PATH):
         model = joblib.load(MODEL_PATH)
         scaler = joblib.load(SCALER_PATH)
@@ -53,6 +64,7 @@ def reload_model():
                 production_auc = meta.get("production_auc", 0.0)
                 logger.info(f"✅ Promoted model metadata loaded: architecture='{winning_arch}', variant='{meta.get('winning_feature_variant')}', EER={production_eer}%, AUC={production_auc}")
         except (OSError, ValueError, KeyError) as e:
+
             logger.warning(f"Failed to load model metadata ({e}). Using defaults.")
 
 
