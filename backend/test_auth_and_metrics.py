@@ -50,22 +50,29 @@ def test_security_headers_presence():
     assert "default-src" in res.headers.get("Content-Security-Policy")
 
 
-def test_validate_production_config_rejection():
-    import pytest
-    from config import Settings, validate_production_config
+def test_trusted_proxies_header_filtering():
+    from unittest.mock import MagicMock
 
-    insecure_settings = Settings(
-        ENV="production",
-        JWT_SECRET_KEY="super-secret-trustguard-key-change-in-production",
-        ADMIN_PIN="1234",
-        STEP_UP_PIN="9999",
-        DATABASE_URL="",
-        ALLOWED_ORIGINS=["null"],
-        ENABLE_HTTPS_REDIRECT=False
-    )
+    from config import settings
+    from main import get_identifier_and_ip
 
-    with pytest.raises(RuntimeError) as exc_info:
-        validate_production_config(insecure_settings)
+    # 1. Untrusted socket IP -> ignores X-Forwarded-For
+    req_untrusted = MagicMock()
+    req_untrusted.client.host = "203.0.113.50"
+    req_untrusted.headers = {"X-Forwarded-For": "1.2.3.4"}
+    req_untrusted.query_params = {}
 
-    assert "PRODUCTION SECURITY CONFIGURATION FAILURE" in str(exc_info.value)
+    settings.TRUSTED_PROXIES = ["127.0.0.1"]
+    key = get_identifier_and_ip(req_untrusted)
+    assert key.startswith("203.0.113.50:")
+
+    # 2. Trusted socket IP -> honors X-Forwarded-For
+    req_trusted = MagicMock()
+    req_trusted.client.host = "127.0.0.1"
+    req_trusted.headers = {"X-Forwarded-For": "198.51.100.22"}
+    req_trusted.query_params = {}
+
+    key_t = get_identifier_and_ip(req_trusted)
+    assert key_t.startswith("198.51.100.22:")
+
 

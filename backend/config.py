@@ -33,7 +33,12 @@ class Settings(BaseSettings):
     RATE_LIMIT_AUTH: str = "5/minute"
     RATE_LIMIT_ADMIN_OVERRIDE: str = "10/minute"
     RATE_LIMIT_EXPORT: str = "5/minute"
+    TRUSTED_PROXIES: list[str] = [
+        "127.0.0.1",
+        "::1"
+    ]
     ENABLE_HTTPS_REDIRECT: bool = os.environ.get("ENABLE_HTTPS_REDIRECT", "false").lower() == "true"
+
 
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")

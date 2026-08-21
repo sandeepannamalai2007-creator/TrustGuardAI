@@ -59,14 +59,23 @@ ADMIN_PIN = settings.ADMIN_PIN
 
 def get_identifier_and_ip(request: Request) -> str:
     """
-    🔴 Item 8: Rate-limit key generator combining client IP + user/session identity.
-    Supports reverse proxy headers (X-Forwarded-For, X-Real-IP).
+    🔴 Item 1: Rate-limit key generator combining client IP + user/session identity.
+    Only trusts forwarded headers (X-Forwarded-For, X-Real-IP) if socket IP is in settings.TRUSTED_PROXIES.
     """
-    client_ip = (
-        request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
-        or request.headers.get("X-Real-IP", "").strip()
-        or (request.client.host if request.client else "127.0.0.1")
+    socket_ip = request.client.host if request.client else "127.0.0.1"
+    is_trusted = (
+        "*" in settings.TRUSTED_PROXIES
+        or socket_ip in settings.TRUSTED_PROXIES
     )
+
+    if is_trusted:
+        client_ip = (
+            request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+            or request.headers.get("X-Real-IP", "").strip()
+            or socket_ip
+        )
+    else:
+        client_ip = socket_ip
 
     session_id = request.headers.get("X-Session-ID") or request.query_params.get("session_id", "")
     auth_header = request.headers.get("Authorization", "")
@@ -80,14 +89,12 @@ def get_identifier_and_ip(request: Request) -> str:
         except Exception as e:  # noqa: BLE001
             logger.debug(f"Rate limiter could not decode token: {e}")
 
-
     identity = user_id or session_id or "anonymous"
     return f"{client_ip}:{identity}"
 
 
 storage_uri = f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}" if (settings.REDIS_HOST and settings.ENV.lower() == "production") else "memory://"
 limiter = Limiter(key_func=get_identifier_and_ip, storage_uri=storage_uri)
-
 
 
 from contextlib import asynccontextmanager
@@ -149,10 +156,13 @@ def liveness_probe():
     return {"status": "alive", "timestamp": datetime.now(timezone.utc).isoformat()}
 
 
+import numpy as np
+
+
 @app.get("/ready")
 def readiness_probe(db: Session = Depends(get_db)):
     """
-    Readiness probe: verifies database connectivity, ML model readiness, and session state.
+    🔴 Item 2: Readiness probe: verifies database connectivity and performs an actual ML model scoring execution check.
     """
     prune_expired_sessions()
     db_ok = False
@@ -162,8 +172,19 @@ def readiness_probe(db: Session = Depends(get_db)):
     except Exception as e:  # noqa: BLE001
         logger.error(f"Database readiness check failed: {e}")
 
-    from ml.predictor import model as ml_model
-    ml_ok = ml_model is not None or (os.path.exists(os.path.join(os.path.dirname(__file__), "..", "ml", "mahalanobis_reference.pkl")))
+    ml_ok = False
+    try:
+        from ml.predictor import model as ml_model
+        if ml_model is not None and isinstance(ml_model, dict) and "mean" in ml_model and "cov_inv" in ml_model:
+            # Perform dummy 7D scoring dry run to verify model calculations
+            dummy_sample = np.array([[120.0, 15.0, 150.0, 20.0, 4.5, 0.8, 1.0]], dtype=float)
+            diff = dummy_sample - ml_model["mean"]
+            dm = np.sqrt(np.maximum(np.sum((diff @ ml_model["cov_inv"]) * diff, axis=1), 0.0))
+            sim = float(np.clip(np.exp(-dm / 7.0) * 100.0, 0.0, 100.0)[0])
+            if 0.0 <= sim <= 100.0:
+                ml_ok = True
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"ML model readiness dry-run scoring failed: {e}")
 
     status_code = 200 if (db_ok and ml_ok) else 503
     payload = {
@@ -175,6 +196,7 @@ def readiness_probe(db: Session = Depends(get_db)):
     if status_code != 200:
         raise HTTPException(status_code=503, detail=payload)
     return payload
+
 
 
 @app.get("/health")
