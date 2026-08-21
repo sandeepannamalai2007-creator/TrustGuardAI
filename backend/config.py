@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     REDIS_PASSWORD: str = os.environ.get("REDIS_PASSWORD", "")
     REDIS_SSL: bool = os.environ.get("REDIS_SSL", "false").lower() == "true"
     REDIS_DB: int = int(os.environ.get("REDIS_DB", "0"))
+    REDIS_TIMEOUT: float = float(os.environ.get("REDIS_TIMEOUT", "2.0"))
 
     def get_redis_url(self) -> str:
         """Constructs production-grade Redis URL supporting TLS (rediss://) and auth."""
@@ -65,7 +66,7 @@ settings = Settings()
 def validate_production_config(settings_obj: Settings | None = None) -> bool:
     """
     🔴 Items 1 & 2: Validates production security configuration at startup.
-    Hhalts application startup immediately if insecure defaults or misconfigurations are detected in production.
+    Halts application startup immediately if insecure defaults or misconfigurations are detected in production.
     """
     s = settings_obj or settings
     if s.ENV.lower() != "production":
@@ -90,10 +91,29 @@ def validate_production_config(settings_obj: Settings | None = None) -> bool:
     if not s.ENABLE_HTTPS_REDIRECT:
         errors.append("Production requires ENABLE_HTTPS_REDIRECT=True.")
 
+    # 🔴 Redis Production Checks: require host and credentials, test connectivity
+    if not s.REDIS_HOST:
+        errors.append("Production requires REDIS_HOST to be configured.")
+
+    if not s.REDIS_PASSWORD:
+        errors.append("Production requires REDIS_PASSWORD (unauthenticated Redis is forbidden in production).")
+
+    try:
+        import redis
+        r = redis.Redis.from_url(
+            s.get_redis_url(),
+            socket_timeout=s.REDIS_TIMEOUT,
+            socket_connect_timeout=s.REDIS_TIMEOUT
+        )
+        r.ping()
+    except Exception as e:  # noqa: BLE001
+        errors.append(f"Production Redis connection/auth check failed: {e}")
+
     if errors:
         error_msg = "🔴 PRODUCTION SECURITY CONFIGURATION FAILURE:\n" + "\n".join(f" - {err}" for err in errors)
         raise RuntimeError(error_msg)
 
     return True
+
 
 

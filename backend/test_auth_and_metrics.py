@@ -76,3 +76,43 @@ def test_trusted_proxies_header_filtering():
     assert key_t.startswith("198.51.100.22:")
 
 
+def test_redis_url_construction():
+    from config import Settings
+
+    # Non-SSL, no auth
+    s1 = Settings(REDIS_HOST="redis.local", REDIS_PORT=6379, REDIS_SSL=False, REDIS_PASSWORD="")
+    assert s1.get_redis_url() == "redis://redis.local:6379/0"
+
+    # SSL with password
+    s2 = Settings(REDIS_HOST="redis.prod", REDIS_PORT=6380, REDIS_SSL=True, REDIS_PASSWORD="secretpassword", REDIS_DB=1)
+    assert s2.get_redis_url() == "rediss://:secretpassword@redis.prod:6380/1"
+
+    # SSL with username & password
+    s3 = Settings(REDIS_HOST="redis.prod", REDIS_PORT=6380, REDIS_SSL=True, REDIS_USERNAME="app_user", REDIS_PASSWORD="secretpassword", REDIS_DB=2)
+    assert s3.get_redis_url() == "rediss://app_user:secretpassword@redis.prod:6380/2"
+
+
+def test_validate_production_config_redis_rejection():
+    import pytest
+    from config import Settings, validate_production_config
+
+    insecure_settings = Settings(
+        ENV="production",
+        JWT_SECRET_KEY="a" * 32,
+        ADMIN_PIN="123456",
+        STEP_UP_PIN="999999",
+        DATABASE_URL="postgresql://user:pass@localhost:5432/trustguard",
+        ALLOWED_ORIGINS=["https://trustguard.ai"],
+        ENABLE_HTTPS_REDIRECT=True,
+        REDIS_HOST="localhost",
+        REDIS_PASSWORD=""  # Missing Redis password in production
+    )
+
+    with pytest.raises(RuntimeError) as exc_info:
+        validate_production_config(insecure_settings)
+
+    assert "PRODUCTION SECURITY CONFIGURATION FAILURE" in str(exc_info.value)
+    assert "REDIS_PASSWORD" in str(exc_info.value)
+
+
+
