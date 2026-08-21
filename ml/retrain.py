@@ -241,19 +241,7 @@ def _evaluate_mahalanobis_candidate(X: np.ndarray, user_ids: list[str], unique_u
             all_imp_scores.extend(sim_i)
 
     if not all_gen_scores:
-        # Single-subject fallback split
-        n_samples = len(X)
-        split_idx = max(5, int(0.7 * n_samples))
-        gen_test = X[split_idx:] if split_idx < n_samples else X[:split_idx]
-        imp_test = gen_test + np.random.normal(loc=50.0, scale=20.0, size=gen_test.shape)
-
-        diff_gen = gen_test - mu_ref
-        dm_gen = np.sqrt(np.maximum(np.sum((diff_gen @ cov_inv_ref) * diff_gen, axis=1), 0.0))
-        all_gen_scores = np.clip(np.exp(-dm_gen / float(X.shape[1])) * 100.0, 0.0, 100.0)
-
-        diff_imp = imp_test - mu_ref
-        dm_imp = np.sqrt(np.maximum(np.sum((diff_imp @ cov_inv_ref) * diff_imp, axis=1), 0.0))
-        all_imp_scores = np.clip(np.exp(-dm_imp / float(X.shape[1])) * 100.0, 0.0, 100.0)
+        raise ValueError("Insufficient subjects or genuine test samples for biometric evaluation.")
 
     from sklearn.metrics import roc_auc_score
 
@@ -280,7 +268,6 @@ def _evaluate_mahalanobis_candidate(X: np.ndarray, user_ids: list[str], unique_u
             min_diff = diff
             eer_val = (far + frr) / 2.0
 
-
     model_dict = {
         "mean": mu_ref,
         "cov_inv": cov_inv_ref,
@@ -291,42 +278,6 @@ def _evaluate_mahalanobis_candidate(X: np.ndarray, user_ids: list[str], unique_u
 
     return round(float(eer_val * 100.0), 2), round(float(auc_val), 4), model_dict
 
-
-    # Compute exact EER intersection & ROC-AUC
-    thresholds = np.linspace(0.0, 100.0, 201)
-    far_list, frr_list, tpr_list, fpr_list = [], [], [], []
-    min_diff, eer_val = 1.0, 0.0
-
-    for T in thresholds:
-        far = float(np.mean(sim_imp >= T))
-        frr = float(np.mean(sim_gen < T))
-        far_list.append(far)
-        frr_list.append(frr)
-        tpr_list.append(1.0 - frr)
-        fpr_list.append(far)
-
-        diff = abs(far - frr)
-        if diff < min_diff:
-            min_diff = diff
-            eer_val = (far + frr) / 2.0
-
-    sorted_idx = np.argsort(fpr_list)
-    sorted_fpr = np.array(fpr_list)[sorted_idx]
-    sorted_tpr = np.array(tpr_list)[sorted_idx]
-    if hasattr(np, "trapezoid"):
-        auc_val = float(np.trapezoid(sorted_tpr, sorted_fpr))
-    else:
-        auc_val = float(np.sum(np.diff(sorted_fpr) * (sorted_tpr[1:] + sorted_tpr[:-1]) / 2.0))
-
-    model_dict = {
-        "mean": mu_ref,
-        "cov_inv": cov_inv_ref,
-        "feature_indices": [0, 1, 2, 3, 4, 5, 6],
-        "architecture": "Model B: Mahalanobis Distance (Identity Profile)",
-        "feature_variant": "Variant 2: 7D Extended Telemetry"
-    }
-
-    return round(float(eer_val * 100.0), 2), round(float(auc_val), 4), model_dict
 
 
 def retrain_model(force: bool = False) -> dict:
@@ -349,6 +300,13 @@ def retrain_model(force: bool = False) -> dict:
         msg = "[RETRAIN] Skipped — 0 high-confidence samples available."
         logger.info(msg)
         return {"triggered": False, "message": msg, "samples_used": 0, "promoted": False}
+
+    # 🔴 Item 1: Require at least 2 distinct subjects for cross-subject biometric evaluation
+    if n_users < 2:
+        msg = "[RETRAIN SKIPPED] Insufficient subjects for legitimate cross-subject biometric evaluation (minimum 2 distinct subjects required)."
+        logger.info(msg)
+        return {"triggered": False, "message": msg, "samples_used": n_samples, "users_count": n_users, "promoted": False}
+
 
     # 🔴 Item 3: force=True bypasses minimum sample-count requirement, NOT performance gate
     if n_samples < MIN_NEW_SAMPLES and not force:

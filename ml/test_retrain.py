@@ -43,16 +43,17 @@ def test_retrain_model_evaluation_gate():
 def test_rollback_model_execution(monkeypatch):
     import ml.retrain as retrain_mod
     dummy_X = np.random.uniform(100.0, 150.0, (30, 7))
-    dummy_users = ["user_1"] * 30
-    dummy_uniques = ["user_1"]
+    dummy_users = ["user_1"] * 15 + ["user_2"] * 15
+    dummy_uniques = ["user_1", "user_2"]
 
     monkeypatch.setattr(retrain_mod, "_fetch_high_confidence_samples", lambda: (dummy_X, dummy_users, dummy_uniques))
 
-    res_train = retrain_mod.retrain_model(force=True)
-    assert res_train.get("promoted") is True
+    res_override = retrain_mod.emergency_model_override(admin_user="test_admin")
+    assert res_override.get("success") is True
 
     res_rollback = retrain_mod.rollback_model()
     assert isinstance(res_rollback, dict)
     assert "success" in res_rollback
+
 
 

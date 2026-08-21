@@ -48,8 +48,8 @@ def test_force_flag_cannot_bypass_performance_gate(monkeypatch):
     """🔴 Item 3: force=True must ONLY bypass sample count, NEVER performance gate."""
     # Create candidate dataset with extreme noise that degrades biometric metrics
     dummy_X = np.random.uniform(0.0, 1000.0, (30, 7))
-    dummy_users = ["user_1"] * 30
-    dummy_uniques = ["user_1"]
+    dummy_users = ["user_1"] * 15 + ["user_2"] * 15
+    dummy_uniques = ["user_1", "user_2"]
 
     monkeypatch.setattr(retrain_mod, "_fetch_high_confidence_samples", lambda: (dummy_X, dummy_users, dummy_uniques))
 
@@ -62,12 +62,13 @@ def test_force_flag_cannot_bypass_performance_gate(monkeypatch):
 def test_emergency_model_override_audit_logging(monkeypatch):
     """🔴 Item 3: Emergency manual override logs EMERGENCY_MODEL_OVERRIDE audit event."""
     dummy_X = np.random.uniform(100.0, 150.0, (30, 7))
-    dummy_users = ["user_1"] * 30
-    dummy_uniques = ["user_1"]
+    dummy_users = ["user_1"] * 15 + ["user_2"] * 15
+    dummy_uniques = ["user_1", "user_2"]
 
     monkeypatch.setattr(retrain_mod, "_fetch_high_confidence_samples", lambda: (dummy_X, dummy_users, dummy_uniques))
 
     res = retrain_mod.emergency_model_override(admin_user="test_admin")
+
     assert res.get("success") is True
     assert res.get("model_version") is not None
 
