@@ -208,28 +208,27 @@ def health(db: Session = Depends(get_db)):
 # 🔴 Item 5: Protect /metrics in production
 @app.get("/metrics")
 def get_metrics(
-    x_admin_pin: str = Header(None, alias="X-Admin-PIN"),
     authorization: str = Header(None)
 ):
     """
     Prometheus telemetry endpoint.
-    Requires Admin PIN or Admin JWT token when in production mode.
+    Requires Admin Bearer JWT token when in production mode.
     """
     if settings.ENV.lower() == "production":
-        is_authenticated = (x_admin_pin == settings.ADMIN_PIN)
-        if not is_authenticated and authorization and authorization.startswith("Bearer "):
+        is_authenticated = False
+        if authorization and authorization.startswith("Bearer "):
             token = authorization.split(" ")[1]
             try:
                 verify_admin_token(token)
                 is_authenticated = True
-            except Exception:  # noqa: BLE001
-                is_authenticated = False
-
+            except Exception as e:  # noqa: BLE001
+                logger.debug(f"Metrics authentication failed: {e}")
 
         if not is_authenticated:
-            raise HTTPException(status_code=403, detail="Access denied to /metrics in production. Admin authentication required.")
+            raise HTTPException(status_code=403, detail="Access denied to /metrics in production. Admin service JWT token required.")
 
     return Response(content=metrics_collector.generate_prometheus_output(), media_type="text/plain; version=0.0.4")
+
 
 
 
