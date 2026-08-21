@@ -522,15 +522,20 @@ def trigger_model_retrain(
         raise HTTPException(status_code=403, detail="Invalid Admin PIN")
 
     result = retrain_model(force=force)
-    if result["triggered"]:
+    if result.get("promoted"):
         reload_ml_model()
-        logger.info("[ADMIN] Model retrained and hot-reloaded.")
+        logger.info(f"[ADMIN] Candidate model {result.get('model_version')} promoted and hot-reloaded.")
 
     return {
-        "triggered": result["triggered"],
-        "message": result["message"],
-        "samples_used": result["samples_used"]
+        "triggered": result.get("triggered", False),
+        "promoted": result.get("promoted", False),
+        "message": result.get("message", ""),
+        "model_version": result.get("model_version"),
+        "samples_used": result.get("samples_used", 0),
+        "production_eer": result.get("production_eer"),
+        "production_auc": result.get("production_auc")
     }
+
 
 
 from fastapi.responses import FileResponse
