@@ -83,13 +83,31 @@ def test_redis_url_construction():
     s1 = Settings(REDIS_HOST="redis.local", REDIS_PORT=6379, REDIS_SSL=False, REDIS_PASSWORD="")
     assert s1.get_redis_url() == "redis://redis.local:6379/0"
 
-    # SSL with password
-    s2 = Settings(REDIS_HOST="redis.prod", REDIS_PORT=6380, REDIS_SSL=True, REDIS_PASSWORD="secretpassword", REDIS_DB=1)
-    assert s2.get_redis_url() == "rediss://:secretpassword@redis.prod:6380/1"
+    # SSL with password and special characters (@, :, /, ?, #, %)
+    s2 = Settings(
+        REDIS_HOST="redis.prod",
+        REDIS_PORT=6380,
+        REDIS_SSL=True,
+        REDIS_PASSWORD="p@ss:w/o?r#d%1",
+        REDIS_DB=1,
+        REDIS_SSL_CERT_REQS="required"
+    )
+    url2 = s2.get_redis_url()
+    assert url2.startswith("rediss://:p%40ss%3Aw%2Fo%3Fr%23d%251@redis.prod:6380/1")
+    assert "ssl_cert_reqs=required" in url2
 
     # SSL with username & password
-    s3 = Settings(REDIS_HOST="redis.prod", REDIS_PORT=6380, REDIS_SSL=True, REDIS_USERNAME="app_user", REDIS_PASSWORD="secretpassword", REDIS_DB=2)
-    assert s3.get_redis_url() == "rediss://app_user:secretpassword@redis.prod:6380/2"
+    s3 = Settings(
+        REDIS_HOST="redis.prod",
+        REDIS_PORT=6380,
+        REDIS_SSL=True,
+        REDIS_USERNAME="app:user",
+        REDIS_PASSWORD="secretpassword",
+        REDIS_DB=2
+    )
+    url3 = s3.get_redis_url()
+    assert url3.startswith("rediss://app%3Auser:secretpassword@redis.prod:6380/2")
+
 
 
 def test_validate_production_config_redis_rejection():

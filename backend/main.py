@@ -118,7 +118,31 @@ app = FastAPI(
 )
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+import redis
+from fastapi.responses import JSONResponse
+
+
+# 🔴 Fail-Closed Policy: If Redis rate limiter fails at runtime in production, fail closed for security
+@app.exception_handler(redis.RedisError)
+async def redis_exception_handler(request: Request, exc: redis.RedisError):
+    logger.error(f"[FAIL-CLOSED SECURITY] Redis backend error encountered: {exc}")
+    if settings.ENV.lower() == "production":
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": "RateLimitingServiceUnavailable",
+                "message": "Security policy enforces fail-closed behavior for rate-limited operations when Redis is unavailable.",
+                "detail": "Service temporarily unavailable. Please retry shortly."
+            }
+        )
+    return JSONResponse(
+        status_code=500,
+        content={"error": "RedisError", "detail": str(exc)}
+    )
+
 app.add_middleware(MetricsMiddleware)
+
 
 if settings.ENABLE_HTTPS_REDIRECT:
     app.add_middleware(HTTPSRedirectMiddleware)

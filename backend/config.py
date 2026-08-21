@@ -1,4 +1,5 @@
 import os
+import urllib.parse
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -22,18 +23,31 @@ class Settings(BaseSettings):
     REDIS_USERNAME: str = os.environ.get("REDIS_USERNAME", "")
     REDIS_PASSWORD: str = os.environ.get("REDIS_PASSWORD", "")
     REDIS_SSL: bool = os.environ.get("REDIS_SSL", "false").lower() == "true"
+    REDIS_SSL_CERT_REQS: str = os.environ.get("REDIS_SSL_CERT_REQS", "required")
+    REDIS_SSL_CA_CERTS: str | None = os.environ.get("REDIS_SSL_CA_CERTS", None)
     REDIS_DB: int = int(os.environ.get("REDIS_DB", "0"))
     REDIS_TIMEOUT: float = float(os.environ.get("REDIS_TIMEOUT", "2.0"))
 
     def get_redis_url(self) -> str:
-        """Constructs production-grade Redis URL supporting TLS (rediss://) and auth."""
+        """Constructs production-grade Redis URL supporting TLS (rediss://), URL-encoded auth, and cert validation."""
         scheme = "rediss" if self.REDIS_SSL else "redis"
         auth = ""
         if self.REDIS_USERNAME and self.REDIS_PASSWORD:
-            auth = f"{self.REDIS_USERNAME}:{self.REDIS_PASSWORD}@"
+            encoded_user = urllib.parse.quote(self.REDIS_USERNAME, safe="")
+            encoded_pass = urllib.parse.quote(self.REDIS_PASSWORD, safe="")
+            auth = f"{encoded_user}:{encoded_pass}@"
         elif self.REDIS_PASSWORD:
-            auth = f":{self.REDIS_PASSWORD}@"
-        return f"{scheme}://{auth}{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
+            encoded_pass = urllib.parse.quote(self.REDIS_PASSWORD, safe="")
+            auth = f":{encoded_pass}@"
+
+        query_params = {}
+        if self.REDIS_SSL:
+            query_params["ssl_cert_reqs"] = self.REDIS_SSL_CERT_REQS
+            if self.REDIS_SSL_CA_CERTS:
+                query_params["ssl_ca_certs"] = self.REDIS_SSL_CA_CERTS
+
+        query_str = f"?{urllib.parse.urlencode(query_params)}" if query_params else ""
+        return f"{scheme}://{auth}{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}{query_str}"
 
 
     # Rate Limiting & Security
@@ -98,6 +112,12 @@ def validate_production_config(settings_obj: Settings | None = None) -> bool:
     if not s.REDIS_PASSWORD:
         errors.append("Production requires REDIS_PASSWORD (unauthenticated Redis is forbidden in production).")
 
+    if s.REDIS_SSL and s.REDIS_SSL_CERT_REQS.lower() == "none":
+        errors.append("Production Redis with TLS cannot disable certificate verification (REDIS_SSL_CERT_REQS cannot be 'none').")
+
+    if s.REDIS_SSL_CA_CERTS and not os.path.exists(s.REDIS_SSL_CA_CERTS):
+        errors.append(f"Configured REDIS_SSL_CA_CERTS file not found: {s.REDIS_SSL_CA_CERTS}")
+
     try:
         import redis
         r = redis.Redis.from_url(
@@ -114,6 +134,7 @@ def validate_production_config(settings_obj: Settings | None = None) -> bool:
         raise RuntimeError(error_msg)
 
     return True
+
 
 
 
