@@ -537,6 +537,31 @@ def trigger_model_retrain(
     }
 
 
+@app.post("/admin/rollback")
+def trigger_model_rollback(
+    x_admin_pin: str = Header(None, alias="X-Admin-PIN"),
+    target_version: str | None = None,
+    admin_token: dict = Depends(verify_admin_token)
+):
+    """
+    Admin endpoint to trigger model rollback to a previous archived model version.
+    Requires Admin JWT token and Admin PIN.
+    """
+    if x_admin_pin != ADMIN_PIN:
+        raise HTTPException(status_code=403, detail="Invalid Admin PIN")
+
+    from ml.retrain import rollback_model
+    res = rollback_model(target_version=target_version)
+    if not res.get("success"):
+        raise HTTPException(status_code=400, detail=res.get("message"))
+
+    reload_ml_model()
+    logger.info(f"[ADMIN] Model rolled back to {res.get('restored_version')}.")
+
+    return res
+
+
+
 
 from fastapi.responses import FileResponse
 
