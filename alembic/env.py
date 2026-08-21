@@ -2,13 +2,14 @@ import os
 import sys
 from logging.config import fileConfig
 
-from alembic import context
 from sqlalchemy import engine_from_config, pool
+
+from alembic import context
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)) + "/../backend")
 
-from database import Base
 from config import settings
+from database import Base
 
 config = context.config
 
@@ -20,13 +21,20 @@ target_metadata = Base.metadata
 
 def get_url():
     url = settings.DATABASE_URL
+    is_prod = settings.ENV.lower() == "production"
     if not url:
+        if is_prod:
+            raise RuntimeError(
+                "🔴 ALEMBIC MIGRATION FAILURE: DATABASE_URL is missing in production mode. "
+                "Silent fallback to local SQLite is strictly forbidden in production."
+            )
         base_dir = os.path.dirname(os.path.abspath(__file__))
         sqlite_path = os.path.abspath(os.path.join(base_dir, "..", "trustguard.db"))
         url = f"sqlite:///{sqlite_path}"
     if url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql://", 1)
     return url
+
 
 
 def run_migrations_offline() -> None:
