@@ -21,6 +21,8 @@ trustguard.db
 .coverage
 htmlcov/
 *.pkl
+!ml/*.pkl
+
 
 
 # OS Files
