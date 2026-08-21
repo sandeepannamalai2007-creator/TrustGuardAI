@@ -1,5 +1,5 @@
 {
-  "model_version": "v007",
+  "model_version": "v011",
   "winning_architecture": "Model B: Mahalanobis Distance (Identity Profile)",
   "winning_feature_variant": "Variant 2: 7D Extended Telemetry",
   "feature_indices": [
@@ -13,8 +13,8 @@
   ],
   "training_samples": 30,
   "training_users": 1,
-  "production_eer": 43.33,
-  "production_auc": 0.7726,
+  "production_eer": 0.0,
+  "production_auc": 0.9444,
   "dataset_hash": "33a6d8c13c5e41b3",
-  "created_at": "2026-08-21T04:31:17.759477+00:00"
+  "created_at": "2026-08-21T05:53:31.352614+00:00"
 }

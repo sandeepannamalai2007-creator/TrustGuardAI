@@ -558,7 +558,29 @@ def trigger_model_rollback(
     reload_ml_model()
     logger.info(f"[ADMIN] Model rolled back to {res.get('restored_version')}.")
 
+@app.post("/admin/emergency-override")
+def trigger_emergency_model_override(
+    x_admin_pin: str = Header(None, alias="X-Admin-PIN"),
+    admin_token: dict = Depends(verify_admin_token)
+):
+    """
+    Admin endpoint for emergency manual model override.
+    Requires Admin JWT token and Admin PIN. Records explicit EMERGENCY_MODEL_OVERRIDE audit event.
+    """
+    if x_admin_pin != ADMIN_PIN:
+        raise HTTPException(status_code=403, detail="Invalid Admin PIN")
+
+    from ml.retrain import emergency_model_override
+    admin_user = admin_token.get("sub", "admin_user")
+    res = emergency_model_override(admin_user=admin_user)
+    if not res.get("success"):
+        raise HTTPException(status_code=400, detail=res.get("message"))
+
+    reload_ml_model()
+    logger.warning(f"[ADMIN] Emergency model override performed by {admin_user}.")
+
     return res
+
 
 
 

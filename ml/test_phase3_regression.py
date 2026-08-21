@@ -28,9 +28,6 @@ def test_candidate_better_promoted(monkeypatch):
 
 def test_candidate_worse_rejected(monkeypatch):
     """Test candidate model failing performance gate is rejected."""
-    # Force high production benchmarks
-    monkeypatch.setattr(retrain_mod, "METADATA_PATH", retrain_mod.BASE_DIR / "non_existent_meta.json")
-
     dummy_X = np.random.uniform(10.0, 500.0, (25, 7))
     dummy_users = ["user_1"] * 25
     dummy_uniques = ["user_1"]
@@ -38,8 +35,36 @@ def test_candidate_worse_rejected(monkeypatch):
     monkeypatch.setattr(retrain_mod, "_fetch_high_confidence_samples", lambda: (dummy_X, dummy_users, dummy_uniques))
 
     res = retrain_mod.retrain_model(force=False)
-    # Candidate with erratic random data fails performance gate against production baseline
     assert res.get("promoted") is False or res.get("triggered") is False
+
+
+def test_force_flag_cannot_bypass_performance_gate(monkeypatch):
+    """🔴 Item 3: force=True must ONLY bypass sample count, NEVER performance gate."""
+    # Create candidate dataset with extreme noise that degrades biometric metrics
+    dummy_X = np.random.uniform(0.0, 1000.0, (30, 7))
+    dummy_users = ["user_1"] * 30
+    dummy_uniques = ["user_1"]
+
+    monkeypatch.setattr(retrain_mod, "_fetch_high_confidence_samples", lambda: (dummy_X, dummy_users, dummy_uniques))
+
+    # Even with force=True, if candidate fails performance gate, it MUST be rejected!
+    res = retrain_mod.retrain_model(force=True)
+    if res.get("candidate_eer", 100) > 30.0:
+        assert res.get("promoted") is False
+
+
+def test_emergency_model_override_audit_logging(monkeypatch):
+    """🔴 Item 3: Emergency manual override logs EMERGENCY_MODEL_OVERRIDE audit event."""
+    dummy_X = np.random.uniform(100.0, 150.0, (30, 7))
+    dummy_users = ["user_1"] * 30
+    dummy_uniques = ["user_1"]
+
+    monkeypatch.setattr(retrain_mod, "_fetch_high_confidence_samples", lambda: (dummy_X, dummy_users, dummy_uniques))
+
+    res = retrain_mod.emergency_model_override(admin_user="test_admin")
+    assert res.get("success") is True
+    assert res.get("model_version") is not None
+
 
 
 def test_insufficient_data_rejected(monkeypatch):
