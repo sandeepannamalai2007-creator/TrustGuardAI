@@ -28,9 +28,13 @@ class Settings(BaseSettings):
         "http://127.0.0.1:8000",
         "null"  # Local file:// URI support for development
     ]
-    RATE_LIMIT_START: str = "30/minute"
-    RATE_LIMIT_HISTORY: str = "5/minute"
+    RATE_LIMIT_START: str = "15/minute"
+    RATE_LIMIT_HISTORY: str = "10/minute"
+    RATE_LIMIT_AUTH: str = "5/minute"
+    RATE_LIMIT_ADMIN_OVERRIDE: str = "10/minute"
+    RATE_LIMIT_EXPORT: str = "5/minute"
     ENABLE_HTTPS_REDIRECT: bool = os.environ.get("ENABLE_HTTPS_REDIRECT", "false").lower() == "true"
+
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

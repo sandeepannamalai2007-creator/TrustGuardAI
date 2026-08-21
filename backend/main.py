@@ -16,9 +16,14 @@ from api_models import (
     StudentCreate,
     StudentResponse,
 )
-from auth import create_access_token, verify_admin_token, verify_session_token
+from auth import (
+    create_access_token,
+    decode_access_token,
+    verify_admin_token,
+    verify_session_token,
+)
 from config import settings, validate_production_config
-from database import Base, engine, get_db
+from database import get_db
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
@@ -35,7 +40,6 @@ from session_manager import (
 )
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from trust_engine import (
@@ -53,9 +57,37 @@ from ml.retrain import retrain_model
 logger = logging.getLogger(__name__)
 ADMIN_PIN = settings.ADMIN_PIN
 
-Base.metadata.create_all(bind=engine)
+def get_identifier_and_ip(request: Request) -> str:
+    """
+    🔴 Item 8: Rate-limit key generator combining client IP + user/session identity.
+    Supports reverse proxy headers (X-Forwarded-For, X-Real-IP).
+    """
+    client_ip = (
+        request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+        or request.headers.get("X-Real-IP", "").strip()
+        or (request.client.host if request.client else "127.0.0.1")
+    )
 
-limiter = Limiter(key_func=get_remote_address)
+    session_id = request.headers.get("X-Session-ID") or request.query_params.get("session_id", "")
+    auth_header = request.headers.get("Authorization", "")
+    user_id = ""
+    if auth_header.startswith("Bearer "):
+        token = auth_header.split(" ")[1]
+        try:
+            payload = decode_access_token(token)
+            user_id = payload.get("sub", "")
+            session_id = session_id or payload.get("session_id", "")
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"Rate limiter could not decode token: {e}")
+
+
+    identity = user_id or session_id or "anonymous"
+    return f"{client_ip}:{identity}"
+
+
+storage_uri = f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}" if (settings.REDIS_HOST and settings.ENV.lower() == "production") else "memory://"
+limiter = Limiter(key_func=get_identifier_and_ip, storage_uri=storage_uri)
+
 
 
 from contextlib import asynccontextmanager
@@ -227,10 +259,12 @@ def start_session(
 
 
 @app.post("/admin/login")
-def admin_login(payload: AdminLoginRequest):
+@limiter.limit(settings.RATE_LIMIT_AUTH)
+def admin_login(request: Request, payload: AdminLoginRequest):
     """
     Admin authentication endpoint. Issues an admin-scoped JWT access token.
     """
+
     if payload.admin_pin != ADMIN_PIN:
         raise HTTPException(status_code=403, detail="Invalid Admin Security PIN")
     
@@ -463,7 +497,9 @@ def get_session_history(
 
 
 @app.post("/session/step-up/verify")
+@limiter.limit(settings.RATE_LIMIT_AUTH)
 def verify_step_up(
+    request: Request,
     payload: StepUpVerifyRequest,
     token_payload: dict = Depends(verify_session_token)
 ):
@@ -498,7 +534,9 @@ def verify_step_up(
 
 
 @app.post("/session/override/lock")
+@limiter.limit(settings.RATE_LIMIT_ADMIN_OVERRIDE)
 def override_lock(
+    request: Request,
     payload: OverrideLockRequest,
     admin_token: dict = Depends(verify_admin_token)
 ):
@@ -520,7 +558,9 @@ def override_lock(
 
 
 @app.post("/session/override/unlock")
+@limiter.limit(settings.RATE_LIMIT_ADMIN_OVERRIDE)
 def override_unlock(
+    request: Request,
     payload: OverrideUnlockRequest,
     admin_token: dict = Depends(verify_admin_token)
 ):
@@ -545,7 +585,9 @@ def override_unlock(
 
 
 @app.get("/session/export/csv")
+@limiter.limit(settings.RATE_LIMIT_EXPORT)
 def export_csv_report(
+    request: Request,
     x_admin_pin: str = Header(None),
     db: Session = Depends(get_db),
     admin_token: dict = Depends(verify_admin_token)
@@ -573,7 +615,9 @@ def export_csv_report(
 
 
 @app.post("/admin/retrain")
+@limiter.limit(settings.RATE_LIMIT_ADMIN_OVERRIDE)
 def trigger_model_retrain(
+    request: Request,
     x_admin_pin: str = Header(None, alias="X-Admin-PIN"),
     force: bool = False,
     admin_token: dict = Depends(verify_admin_token)
@@ -602,7 +646,9 @@ def trigger_model_retrain(
 
 
 @app.post("/admin/rollback")
+@limiter.limit(settings.RATE_LIMIT_ADMIN_OVERRIDE)
 def trigger_model_rollback(
+    request: Request,
     x_admin_pin: str = Header(None, alias="X-Admin-PIN"),
     target_version: str | None = None,
     admin_token: dict = Depends(verify_admin_token)
@@ -622,8 +668,11 @@ def trigger_model_rollback(
     reload_ml_model()
     logger.info(f"[ADMIN] Model rolled back to {res.get('restored_version')}.")
 
+
 @app.post("/admin/emergency-override")
+@limiter.limit(settings.RATE_LIMIT_ADMIN_OVERRIDE)
 def trigger_emergency_model_override(
+    request: Request,
     x_admin_pin: str = Header(None, alias="X-Admin-PIN"),
     admin_token: dict = Depends(verify_admin_token)
 ):
@@ -644,6 +693,7 @@ def trigger_emergency_model_override(
     logger.warning(f"[ADMIN] Emergency model override performed by {admin_user}.")
 
     return res
+
 
 
 
