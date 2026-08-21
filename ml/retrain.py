@@ -316,27 +316,27 @@ def retrain_model(force: bool = False) -> dict:
 
     logger.info(f"[RETRAIN] Training candidate Mahalanobis 7D model on {n_samples} samples across {n_users} users...")
 
-    # Load current production performance metrics
-    prod_eer = 25.09
-    prod_auc = 0.8168
-    prod_version = "v001"
-    if (PROD_DIR / "model_metadata.json").exists():
+    # Load current production performance metrics (no hardcoded fallback constants)
+    prod_eer = None
+    prod_auc = None
+    prod_version = "uninitialized"
+
+    meta_file = PROD_DIR / "model_metadata.json" if (PROD_DIR / "model_metadata.json").exists() else METADATA_PATH
+    if meta_file.exists():
         try:
-            with open(PROD_DIR / "model_metadata.json") as f:
+            with open(meta_file) as f:
                 meta = json.load(f)
-                prod_eer = meta.get("production_eer", 25.09)
-                prod_auc = meta.get("production_auc", 0.8168)
+                prod_eer = meta.get("production_eer")
+                prod_auc = meta.get("production_auc")
                 prod_version = meta.get("model_version", "v001")
         except (OSError, ValueError, KeyError) as e:
-            logger.warning(f"Could not load production metadata ({e}); using default baselines.")
-    elif METADATA_PATH.exists():
-        try:
-            with open(METADATA_PATH) as f:
-                meta = json.load(f)
-                prod_eer = meta.get("production_eer", 25.09)
-                prod_auc = meta.get("production_auc", 0.8168)
-        except (OSError, ValueError, KeyError) as e:
-            logger.warning(f"Could not load metadata ({e}); using baseline metrics.")
+            logger.warning(f"Could not load production metadata ({e}).")
+
+    if prod_eer is None or prod_auc is None:
+        msg = "[RETRAIN SKIPPED] Active production model metadata uninitialized or missing. Retraining performance gate requires an empirical production baseline."
+        logger.warning(msg)
+        return {"triggered": False, "promoted": False, "message": msg, "samples_used": n_samples}
+
 
     # 🔴 Item 1 & 2: Train candidate Mahalanobis reference & compute true biometric EER/AUC
     cand_eer, cand_auc, cand_model_dict = _evaluate_mahalanobis_candidate(X, _user_ids, unique_users)
