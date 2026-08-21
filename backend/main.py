@@ -93,7 +93,7 @@ def get_identifier_and_ip(request: Request) -> str:
     return f"{client_ip}:{identity}"
 
 
-storage_uri = f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}" if (settings.REDIS_HOST and settings.ENV.lower() == "production") else "memory://"
+storage_uri = settings.get_redis_url() if (settings.REDIS_HOST and settings.ENV.lower() == "production") else "memory://"
 limiter = Limiter(key_func=get_identifier_and_ip, storage_uri=storage_uri)
 
 
@@ -162,7 +162,7 @@ import numpy as np
 @app.get("/ready")
 def readiness_probe(db: Session = Depends(get_db)):
     """
-    🔴 Item 2: Readiness probe: verifies database connectivity and performs an actual ML model scoring execution check.
+    🔴 Item 2: Readiness probe: verifies database connectivity, ML model scoring, and Redis connection.
     """
     prune_expired_sessions()
     db_ok = False
@@ -186,16 +186,28 @@ def readiness_probe(db: Session = Depends(get_db)):
     except Exception as e:  # noqa: BLE001
         logger.error(f"ML model readiness dry-run scoring failed: {e}")
 
-    status_code = 200 if (db_ok and ml_ok) else 503
+    redis_ok = True
+    if settings.ENV.lower() == "production":
+        try:
+            import redis
+            r_client = redis.Redis.from_url(settings.get_redis_url(), socket_timeout=2)
+            r_client.ping()
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Redis readiness ping check failed: {e}")
+            redis_ok = False
+
+    status_code = 200 if (db_ok and ml_ok and redis_ok) else 503
     payload = {
         "status": "ready" if status_code == 200 else "unready",
         "database": "connected" if db_ok else "disconnected",
         "ml_model": "loaded" if ml_ok else "unloaded",
+        "redis": "connected" if redis_ok else "disconnected",
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
     if status_code != 200:
         raise HTTPException(status_code=503, detail=payload)
     return payload
+
 
 
 

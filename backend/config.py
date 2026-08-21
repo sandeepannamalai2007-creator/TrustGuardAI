@@ -19,6 +19,21 @@ class Settings(BaseSettings):
     DATABASE_URL: str = os.environ.get("DATABASE_URL", "")
     REDIS_HOST: str = os.environ.get("REDIS_HOST", "localhost")
     REDIS_PORT: int = int(os.environ.get("REDIS_PORT", "6379"))
+    REDIS_USERNAME: str = os.environ.get("REDIS_USERNAME", "")
+    REDIS_PASSWORD: str = os.environ.get("REDIS_PASSWORD", "")
+    REDIS_SSL: bool = os.environ.get("REDIS_SSL", "false").lower() == "true"
+    REDIS_DB: int = int(os.environ.get("REDIS_DB", "0"))
+
+    def get_redis_url(self) -> str:
+        """Constructs production-grade Redis URL supporting TLS (rediss://) and auth."""
+        scheme = "rediss" if self.REDIS_SSL else "redis"
+        auth = ""
+        if self.REDIS_USERNAME and self.REDIS_PASSWORD:
+            auth = f"{self.REDIS_USERNAME}:{self.REDIS_PASSWORD}@"
+        elif self.REDIS_PASSWORD:
+            auth = f":{self.REDIS_PASSWORD}@"
+        return f"{scheme}://{auth}{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
+
 
     # Rate Limiting & Security
     ALLOWED_ORIGINS: list[str] = [
