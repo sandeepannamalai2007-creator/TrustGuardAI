@@ -1,6 +1,6 @@
 {
-  "active_version": "v081",
-  "previous_version": "v082",
-  "activated_at": "2026-08-21T10:32:25.501856+00:00",
+  "active_version": "v085",
+  "previous_version": "v086",
+  "activated_at": "2026-08-21T10:37:20.109656+00:00",
   "activation_reason": "MANUAL_ROLLBACK"
 }

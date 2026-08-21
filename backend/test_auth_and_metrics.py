@@ -133,4 +133,87 @@ def test_validate_production_config_redis_rejection():
     assert "REDIS_PASSWORD" in str(exc_info.value)
 
 
+def test_redis_scenario_1_valid_auth_starts_cleanly(monkeypatch):
+    from unittest.mock import MagicMock
+
+    import redis
+    from config import Settings, validate_production_config
+
+    # Mock redis ping to succeed
+    mock_r = MagicMock()
+    mock_r.ping.return_value = True
+    monkeypatch.setattr(redis.Redis, "from_url", lambda *args, **kwargs: mock_r)
+
+    valid_prod_settings = Settings(
+        ENV="production",
+        JWT_SECRET_KEY="a" * 32,
+        ADMIN_PIN="123456",
+        STEP_UP_PIN="999999",
+        DATABASE_URL="postgresql://user:pass@localhost:5432/trustguard",
+        ALLOWED_ORIGINS=["https://trustguard.ai"],
+        ENABLE_HTTPS_REDIRECT=True,
+        REDIS_HOST="redis.prod.internal",
+        REDIS_PASSWORD="secure_strong_password",
+        REDIS_SSL=True
+    )
+
+    assert validate_production_config(valid_prod_settings) is True
+
+
+def test_redis_scenario_2_wrong_password_refuses_startup(monkeypatch):
+    from unittest.mock import MagicMock
+
+    import pytest
+    import redis
+    from config import Settings, validate_production_config
+
+    # Mock redis ping to raise AuthenticationError
+    mock_r = MagicMock()
+    mock_r.ping.side_effect = redis.AuthenticationError("WRONGPASS invalid username-password pair")
+    monkeypatch.setattr(redis.Redis, "from_url", lambda *args, **kwargs: mock_r)
+
+    bad_auth_settings = Settings(
+        ENV="production",
+        JWT_SECRET_KEY="a" * 32,
+        ADMIN_PIN="123456",
+        STEP_UP_PIN="999999",
+        DATABASE_URL="postgresql://user:pass@localhost:5432/trustguard",
+        ALLOWED_ORIGINS=["https://trustguard.ai"],
+        ENABLE_HTTPS_REDIRECT=True,
+        REDIS_HOST="redis.prod.internal",
+        REDIS_PASSWORD="wrong_password_value",
+        REDIS_SSL=True
+    )
+
+    with pytest.raises(RuntimeError) as exc_info:
+        validate_production_config(bad_auth_settings)
+
+    assert "PRODUCTION SECURITY CONFIGURATION FAILURE" in str(exc_info.value)
+    assert "WRONGPASS" in str(exc_info.value)
+
+
+def test_redis_scenario_3_runtime_failure_fails_closed(monkeypatch):
+    import redis
+    from config import settings
+    from main import app
+
+    # Force production mode
+    monkeypatch.setattr(settings, "ENV", "production")
+
+    # When Redis raises ConnectionError during request on rate-limited endpoint
+    @app.get("/test-rate-limit-redis-runtime-failure")
+    def dummy_route():
+        raise redis.ConnectionError("Redis connection dropped unexpectedly during rate-limiting operation")
+
+    test_client = TestClient(app, raise_server_exceptions=False)
+    response = test_client.get("/test-rate-limit-redis-runtime-failure")
+
+    # Verify 503 Fail-Closed behavior
+    assert response.status_code == 503
+    data = response.json()
+    assert data["error"] == "RateLimitingServiceUnavailable"
+    assert "fail-closed" in data["message"]
+
+
+
 
