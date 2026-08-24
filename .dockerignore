@@ -1,0 +1,48 @@
+# Version control & CI/CD
+.git
+.github
+.gitignore
+
+# Virtual environments
+.venv
+venv
+env
+ENV
+
+# Python cache & artifacts
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.ruff_cache
+.coverage
+htmlcov
+
+# Environment & local secrets
+.env
+.env.*
+*.env
+
+# SQLite & local databases
+*.db
+*.sqlite
+*.sqlite3
+
+# IDEs & OS files
+.idea
+.vscode
+.DS_Store
+Thumbs.db
+node_modules
+
+# Temporary & experimental ML artifacts
+saved_model
+ml/artifacts/candidates
+ml/artifacts/archive
+
+# Keep active production ML artifacts:
+# !ml/mahalanobis_reference.pkl
+# !ml/calibration.json
+# !ml/model_metadata.json
+# !ml/artifacts/production
