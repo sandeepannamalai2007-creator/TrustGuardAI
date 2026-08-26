@@ -69,7 +69,7 @@ jobs:
         ! grep -rE "(SECRET_KEY|ADMIN_PIN|STEP_UP_PIN|POSTGRES_PASSWORD|REDIS_PASSWORD)\s*=\s*['\"][a-zA-Z0-9_-]{8,}['\"]" backend/ ml/ alembic/ docker-compose.yml
 
   docker-build-and-smoke-test:
-    name: Production Docker Build & Smoke Test
+    name: Production Docker Build, Trivy Scan & Smoke Test
     needs: security-and-vulnerability-audit
     runs-on: ubuntu-latest
 
@@ -83,6 +83,16 @@ jobs:
     - name: Build Production Docker Image
       run: |
         docker build -t trustguard-api:latest .
+
+    - name: Trivy Container Image Vulnerability Scan
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: 'trustguard-api:latest'
+        format: 'table'
+        exit-code: '0'
+        ignore-unfixed: true
+        vuln-type: 'os,library'
+        severity: 'CRITICAL,HIGH'
 
     - name: Verify Non-Root User Execution
       run: |
