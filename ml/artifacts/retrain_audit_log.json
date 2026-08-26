@@ -1384,5 +1384,61 @@
     "new_auc": 0.49,
     "decision": "EMERGENCY_MODEL_OVERRIDE",
     "reason": "[EMERGENCY OVERRIDE] Admin test_admin forcibly promoted version v098."
+  },
+  {
+    "timestamp": "2026-08-26T06:07:55.596201+00:00",
+    "requesting_admin": "system_admin",
+    "candidate_version": "v099",
+    "training_sample_count": 150,
+    "training_user_count": 3,
+    "dataset_hash": "a3a4453766caadf845ccd95e3095387d7ecd65b4a39c7a5d12d8ff41d3208db4",
+    "old_eer": 43.33,
+    "new_eer": 0.0,
+    "old_auc": 0.49,
+    "new_auc": 1.0,
+    "decision": "PROMOTED",
+    "reason": "[RETRAIN PROMOTED] Candidate Mahalanobis 7D model v099 passed biometric performance gate (EER=0.0%, AUC=1.0) and was promoted to production on 150 samples across 3 users."
+  },
+  {
+    "timestamp": "2026-08-26T06:07:55.664820+00:00",
+    "requesting_admin": "system_admin",
+    "candidate_version": "candidate_temp",
+    "training_sample_count": 30,
+    "training_user_count": 2,
+    "dataset_hash": "f30f5029980e7682fbaa955d876516094cbdb57b0e505e950264baa00cb6f004",
+    "old_eer": 0.0,
+    "new_eer": 61.67,
+    "old_auc": 1.0,
+    "new_auc": 0.3833,
+    "decision": "REJECTED",
+    "reason": "[RETRAIN REJECTED] Candidate model (EER=61.67%, AUC=0.3833) failed performance gate against production v099 (EER=0.0%, AUC=1.0). Candidate discarded."
+  },
+  {
+    "timestamp": "2026-08-26T06:07:55.761813+00:00",
+    "requesting_admin": "test_admin",
+    "candidate_version": "v100",
+    "training_sample_count": 30,
+    "training_user_count": 2,
+    "dataset_hash": "baf9b9e0d0c92f28079d633f837b6a0f3193008586fa8f0e34b4cf1e9feb9170",
+    "old_eer": 0.0,
+    "new_eer": 50.0,
+    "old_auc": 0.0,
+    "new_auc": 0.5,
+    "decision": "EMERGENCY_MODEL_OVERRIDE",
+    "reason": "[EMERGENCY OVERRIDE] Admin test_admin forcibly promoted version v100."
+  },
+  {
+    "timestamp": "2026-08-26T06:07:58.108564+00:00",
+    "requesting_admin": "test_admin",
+    "candidate_version": "v102",
+    "training_sample_count": 30,
+    "training_user_count": 2,
+    "dataset_hash": "33a6d8c13c5e41b3a73b997be191a49c66c87e2efc8a288f397041e423d025d9",
+    "old_eer": 0.0,
+    "new_eer": 43.33,
+    "old_auc": 0.0,
+    "new_auc": 0.49,
+    "decision": "EMERGENCY_MODEL_OVERRIDE",
+    "reason": "[EMERGENCY OVERRIDE] Admin test_admin forcibly promoted version v102."
   }
 ]
