@@ -73,3 +73,21 @@ class TrustLog(Base):
     avg_mouse_velocity = Column(Float)
 
     session = relationship("ExamSession", back_populates="trust_logs")
+
+
+class AuditLog(Base):
+    """
+    Cryptographically verifiable tamper-evident security audit log with SHA-256 hash chaining.
+    """
+    __tablename__ = "audit_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
+    actor = Column(String, nullable=False)
+    action = Column(String, nullable=False)
+    target = Column(String, nullable=False)
+    result = Column(String, nullable=False)
+    details = Column(String, nullable=True)
+    ip_address = Column(String, nullable=True)
+    previous_hash = Column(String(64), nullable=False)
+    event_hash = Column(String(64), nullable=False)

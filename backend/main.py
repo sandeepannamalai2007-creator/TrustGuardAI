@@ -1,7 +1,15 @@
 import logging
 import os
 import sys
+import uuid
 from datetime import datetime, timezone
+
+from audit_service import record_audit_event, verify_audit_log_chain
+from logging_config import setup_structured_logging
+from retention import enforce_data_retention_policy
+
+# Initialize production-grade structured JSON logging
+setup_structured_logging()
 
 import crud
 from api_models import (
@@ -141,7 +149,51 @@ async def redis_exception_handler(request: Request, exc: redis.RedisError):
         content={"error": "RedisError", "detail": str(exc)}
     )
 
+
+# 🔴 Global Controlled Exception Handler: Never leak stack traces, file paths, DB errors, or secrets
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+    logger.exception(
+        f"[UNHANDLED EXCEPTION] Request ID: {request_id} Path: {request.url.path} Error: {exc}"
+    )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "Internal server error",
+            "message": "An unexpected server error occurred.",
+            "request_id": request_id,
+        },
+    )
+
+
+# 🔴 Request Correlation ID & Payload Size Limit (Max 1MB) Middleware
+MAX_PAYLOAD_BYTES = 1024 * 1024  # 1MB limit
+
+
+@app.middleware("http")
+async def request_correlation_and_payload_limit_middleware(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+    request.state.request_id = request_id
+
+    content_length = request.headers.get("Content-Length")
+    if content_length and int(content_length) > MAX_PAYLOAD_BYTES:
+        return JSONResponse(
+            status_code=413,
+            content={
+                "error": "PayloadTooLarge",
+                "message": f"Request body size exceeds maximum limit of {MAX_PAYLOAD_BYTES} bytes.",
+                "request_id": request_id,
+            },
+        )
+
+    response: Response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    return response
+
+
 app.add_middleware(MetricsMiddleware)
+
 
 
 if settings.ENABLE_HTTPS_REDIRECT:
@@ -317,16 +369,39 @@ def start_session(
 
 @app.post("/admin/login")
 @limiter.limit(settings.RATE_LIMIT_AUTH)
-def admin_login(request: Request, payload: AdminLoginRequest):
+def admin_login(request: Request, payload: AdminLoginRequest, db: Session = Depends(get_db)):
     """
     Admin authentication endpoint. Issues an admin-scoped JWT access token.
     """
+    client_ip = request.client.host if request.client else "127.0.0.1"
 
     if payload.admin_pin != ADMIN_PIN:
+        record_audit_event(
+            db=db,
+            actor="unknown_admin_attempt",
+            action="admin_login",
+            target="system_admin",
+            result="FAILURE",
+            details="Invalid Admin Security PIN submitted.",
+            ip_address=client_ip,
+        )
+        metrics_collector.record_auth_failure()
         raise HTTPException(status_code=403, detail="Invalid Admin Security PIN")
-    
+
     access_token = create_access_token(data={"sub": "admin", "session_id": "admin_session", "role": "admin"})
+
+    record_audit_event(
+        db=db,
+        actor="admin",
+        action="admin_login",
+        target="system_admin",
+        result="SUCCESS",
+        details="Admin authentication token generated successfully.",
+        ip_address=client_ip,
+    )
+
     return {"access_token": access_token, "token_type": "bearer", "role": "admin"}
+
 
 
 
@@ -558,14 +633,27 @@ def get_session_history(
 def verify_step_up(
     request: Request,
     payload: StepUpVerifyRequest,
+    db: Session = Depends(get_db),
     token_payload: dict = Depends(verify_session_token)
 ):
     """
     Priority C: Step-Up Re-Authentication Endpoint.
     Requires valid JWT token matching the session_id and user_id, plus user PIN challenge.
     """
+    client_ip = request.client.host if request.client else "127.0.0.1"
+
     # 1. Enforce JWT session_id = request session_id
     if payload.session_id != token_payload.get("session_id"):
+        record_audit_event(
+            db=db,
+            actor=token_payload.get("sub", "unknown"),
+            action="step_up_failure",
+            target=payload.session_id,
+            result="FAILURE",
+            details="Session ID mismatch between JWT and payload.",
+            ip_address=client_ip,
+        )
+        metrics_collector.record_step_up_failure()
         raise HTTPException(status_code=403, detail="Session ID in JWT token does not match requested session ID")
 
     session = get_session(payload.session_id)
@@ -574,10 +662,30 @@ def verify_step_up(
 
     # 2. Enforce JWT sub (user_id) = session user_id
     if session.get("user_id") != token_payload.get("sub"):
+        record_audit_event(
+            db=db,
+            actor=token_payload.get("sub", "unknown"),
+            action="step_up_failure",
+            target=payload.session_id,
+            result="FAILURE",
+            details="User ID mismatch between JWT and session.",
+            ip_address=client_ip,
+        )
+        metrics_collector.record_step_up_failure()
         raise HTTPException(status_code=403, detail="User ID in JWT token does not match session user ID")
 
     # 3. Validate PIN against configured STEP_UP_PIN or ADMIN_PIN
     if payload.pin not in (settings.STEP_UP_PIN, ADMIN_PIN):
+        record_audit_event(
+            db=db,
+            actor=token_payload.get("sub", "user"),
+            action="step_up_failure",
+            target=payload.session_id,
+            result="FAILURE",
+            details="Invalid Step-Up Security PIN challenge attempt.",
+            ip_address=client_ip,
+        )
+        metrics_collector.record_step_up_failure()
         raise HTTPException(status_code=401, detail="Invalid Step-Up Verification PIN")
 
     session["security_state"] = "NORMAL"
@@ -585,6 +693,16 @@ def verify_step_up(
     session["high_trust_count"] = 0
     session["step_up_completed"] = True
     save_session(payload.session_id, session)
+
+    record_audit_event(
+        db=db,
+        actor=token_payload.get("sub", "user"),
+        action="step_up_success",
+        target=payload.session_id,
+        result="SUCCESS",
+        details="Step-Up re-authentication succeeded. Workstation restored to NORMAL.",
+        ip_address=client_ip,
+    )
 
     logger.info(f"[SECURITY] Step-Up Re-Authentication succeeded for session {payload.session_id}")
     return {"status": "success", "message": "Step-Up verification successful. Workstation status restored to NORMAL.", "security_state": "NORMAL"}
@@ -595,13 +713,26 @@ def verify_step_up(
 def override_lock(
     request: Request,
     payload: OverrideLockRequest,
+    db: Session = Depends(get_db),
     admin_token: dict = Depends(verify_admin_token)
 ):
     """
     Priority C: Administrative Force Lock Intervention.
     Requires Admin JWT token and Admin PIN.
     """
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    admin_actor = admin_token.get("sub", "admin")
+
     if payload.admin_pin != ADMIN_PIN:
+        record_audit_event(
+            db=db,
+            actor=admin_actor,
+            action="admin_override",
+            target=payload.session_id,
+            result="FAILURE",
+            details="Invalid Admin PIN during force lock attempt.",
+            ip_address=client_ip,
+        )
         raise HTTPException(status_code=403, detail="Invalid Admin PIN")
 
     session = get_session(payload.session_id)
@@ -610,6 +741,19 @@ def override_lock(
 
     session["security_state"] = "LOCKED"
     save_session(payload.session_id, session)
+
+    record_audit_event(
+        db=db,
+        actor=admin_actor,
+        action="session_lock",
+        target=payload.session_id,
+        result="SUCCESS",
+        details="Session forcibly locked by administrator.",
+        ip_address=client_ip,
+    )
+    metrics_collector.record_session_lock()
+    metrics_collector.record_admin_override()
+
     logger.warning(f"[ADMIN OVERRIDE] Session {payload.session_id} forcibly LOCKED by administrator.")
     return {"status": "locked", "message": "Workstation forcibly locked by administrator.", "security_state": "LOCKED"}
 
@@ -619,13 +763,26 @@ def override_lock(
 def override_unlock(
     request: Request,
     payload: OverrideUnlockRequest,
+    db: Session = Depends(get_db),
     admin_token: dict = Depends(verify_admin_token)
 ):
     """
     Priority C: Administrative Emergency Unlock Override.
     Requires Admin JWT token and Admin PIN.
     """
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    admin_actor = admin_token.get("sub", "admin")
+
     if payload.admin_pin != ADMIN_PIN:
+        record_audit_event(
+            db=db,
+            actor=admin_actor,
+            action="admin_override",
+            target=payload.session_id,
+            result="FAILURE",
+            details="Invalid Admin PIN during emergency unlock attempt.",
+            ip_address=client_ip,
+        )
         raise HTTPException(status_code=403, detail="Invalid Admin PIN")
 
     session = get_session(payload.session_id)
@@ -637,6 +794,18 @@ def override_unlock(
     session["high_trust_count"] = 0
     session["step_up_completed"] = True
     save_session(payload.session_id, session)
+
+    record_audit_event(
+        db=db,
+        actor=admin_actor,
+        action="session_unlock",
+        target=payload.session_id,
+        result="SUCCESS",
+        details="Session emergency unlock granted by administrator.",
+        ip_address=client_ip,
+    )
+    metrics_collector.record_admin_override()
+
     logger.info(f"[ADMIN OVERRIDE] Session {payload.session_id} unlocked by administrator.")
     return {"status": "success", "message": "Workstation lock cleared by administrator.", "security_state": "NORMAL"}
 
@@ -653,10 +822,32 @@ def export_csv_report(
     Priority C: Export Security Audit Logs as CSV Report.
     Requires Admin JWT token and Admin PIN.
     """
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    admin_actor = admin_token.get("sub", "admin")
+
     if x_admin_pin != ADMIN_PIN:
+        record_audit_event(
+            db=db,
+            actor=admin_actor,
+            action="export_generated",
+            target="audit_report.csv",
+            result="FAILURE",
+            details="Invalid Admin PIN during CSV export.",
+            ip_address=client_ip,
+        )
         raise HTTPException(status_code=403, detail="Invalid Admin Security PIN")
 
     logs = crud.get_security_audit_logs(db, limit=200)
+
+    record_audit_event(
+        db=db,
+        actor=admin_actor,
+        action="export_generated",
+        target="audit_report.csv",
+        result="SUCCESS",
+        details=f"Exported {len(logs)} audit log records.",
+        ip_address=client_ip,
+    )
     
     csv_lines = ["Timestamp,Student_ID,Session_ID,Trust_Score,Decision_Score,Avg_Dwell_ms,Avg_Flight_ms,Typing_Speed_cps"]
     for log, student_id in logs:
@@ -677,23 +868,52 @@ def trigger_model_retrain(
     request: Request,
     x_admin_pin: str = Header(None, alias="X-Admin-PIN"),
     force: bool = False,
+    db: Session = Depends(get_db),
     admin_token: dict = Depends(verify_admin_token)
 ):
     """
     Admin endpoint to trigger on-demand Isolation Forest model retraining.
     Requires Admin JWT token and Admin PIN.
     """
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    admin_actor = admin_token.get("sub", "admin")
+
     if x_admin_pin != ADMIN_PIN:
+        record_audit_event(
+            db=db,
+            actor=admin_actor,
+            action="model_retrain",
+            target="ml_isolation_forest",
+            result="FAILURE",
+            details="Invalid Admin PIN during model retrain trigger.",
+            ip_address=client_ip,
+        )
         raise HTTPException(status_code=403, detail="Invalid Admin PIN")
 
+    metrics_collector.record_retraining_attempt(success=True)
     result = retrain_model(force=force)
-    if result.get("promoted"):
+    promoted = result.get("promoted", False)
+
+    action_label = "model_promote" if promoted else "model_reject"
+    record_audit_event(
+        db=db,
+        actor=admin_actor,
+        action=action_label,
+        target=result.get("model_version", "unknown"),
+        result="SUCCESS" if promoted else "REJECTED",
+        details=result.get("message", ""),
+        ip_address=client_ip,
+    )
+
+    if promoted:
         reload_ml_model()
         logger.info(f"[ADMIN] Candidate model {result.get('model_version')} promoted and hot-reloaded.")
+    else:
+        metrics_collector.record_retraining_attempt(success=False)
 
     return {
         "triggered": result.get("triggered", False),
-        "promoted": result.get("promoted", False),
+        "promoted": promoted,
         "message": result.get("message", ""),
         "model_version": result.get("model_version"),
         "samples_used": result.get("samples_used", 0),
@@ -708,22 +928,46 @@ def trigger_model_rollback(
     request: Request,
     x_admin_pin: str = Header(None, alias="X-Admin-PIN"),
     target_version: str | None = None,
+    db: Session = Depends(get_db),
     admin_token: dict = Depends(verify_admin_token)
 ):
     """
     Admin endpoint to trigger model rollback to a previous archived model version.
     Requires Admin JWT token and Admin PIN.
     """
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    admin_actor = admin_token.get("sub", "admin")
+
     if x_admin_pin != ADMIN_PIN:
         raise HTTPException(status_code=403, detail="Invalid Admin PIN")
 
     from ml.retrain import rollback_model
     res = rollback_model(target_version=target_version)
     if not res.get("success"):
+        record_audit_event(
+            db=db,
+            actor=admin_actor,
+            action="model_rollback",
+            target=target_version or "latest_archive",
+            result="FAILURE",
+            details=res.get("message", ""),
+            ip_address=client_ip,
+        )
         raise HTTPException(status_code=400, detail=res.get("message"))
 
     reload_ml_model()
+    metrics_collector.record_model_rollback()
+    record_audit_event(
+        db=db,
+        actor=admin_actor,
+        action="model_rollback",
+        target=res.get("restored_version", "archive"),
+        result="SUCCESS",
+        details=f"Model rolled back to version {res.get('restored_version')}.",
+        ip_address=client_ip,
+    )
     logger.info(f"[ADMIN] Model rolled back to {res.get('restored_version')}.")
+    return res
 
 
 @app.post("/admin/emergency-override")
@@ -731,25 +975,74 @@ def trigger_model_rollback(
 def trigger_emergency_model_override(
     request: Request,
     x_admin_pin: str = Header(None, alias="X-Admin-PIN"),
+    db: Session = Depends(get_db),
     admin_token: dict = Depends(verify_admin_token)
 ):
     """
     Admin endpoint for emergency manual model override.
     Requires Admin JWT token and Admin PIN. Records explicit EMERGENCY_MODEL_OVERRIDE audit event.
     """
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    admin_actor = admin_token.get("sub", "admin_user")
+
     if x_admin_pin != ADMIN_PIN:
         raise HTTPException(status_code=403, detail="Invalid Admin PIN")
 
     from ml.retrain import emergency_model_override
-    admin_user = admin_token.get("sub", "admin_user")
-    res = emergency_model_override(admin_user=admin_user)
+    res = emergency_model_override(admin_user=admin_actor)
     if not res.get("success"):
+        record_audit_event(
+            db=db,
+            actor=admin_actor,
+            action="emergency_model_override",
+            target="emergency_reset",
+            result="FAILURE",
+            details=res.get("message", ""),
+            ip_address=client_ip,
+        )
         raise HTTPException(status_code=400, detail=res.get("message"))
 
     reload_ml_model()
-    logger.warning(f"[ADMIN] Emergency model override performed by {admin_user}.")
-
+    record_audit_event(
+        db=db,
+        actor=admin_actor,
+        action="emergency_model_override",
+        target="emergency_reset",
+        result="SUCCESS",
+        details="Emergency model override executed by administrator.",
+        ip_address=client_ip,
+    )
+    logger.warning(f"[ADMIN] Emergency model override performed by {admin_actor}.")
     return res
+
+
+@app.get("/admin/audit/verify")
+@limiter.limit(settings.RATE_LIMIT_ADMIN_OVERRIDE)
+def verify_audit_chain_integrity(
+    request: Request,
+    db: Session = Depends(get_db),
+    admin_token: dict = Depends(verify_admin_token)
+):
+    """
+    Cryptographic Audit Trail Integrity Check.
+    Verifies SHA-256 hash chaining across all recorded security events.
+    """
+    return verify_audit_log_chain(db)
+
+
+@app.post("/admin/retention/clean")
+@limiter.limit(settings.RATE_LIMIT_ADMIN_OVERRIDE)
+def trigger_data_retention_cleanup(
+    request: Request,
+    db: Session = Depends(get_db),
+    admin_token: dict = Depends(verify_admin_token)
+):
+    """
+    Data Retention & Privacy Cleanup Endpoint.
+    Prunes expired biometric enrollment buffer samples and continuous trust logs.
+    """
+    return enforce_data_retention_policy(db)
+
 
 
 

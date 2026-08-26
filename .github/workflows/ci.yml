@@ -1,4 +1,4 @@
-name: TrustGuard AI CI Pipeline
+name: TrustGuard AI Production Security & CI Pipeline
 
 on:
   push:
@@ -14,6 +14,8 @@ jobs:
     steps:
     - name: Checkout Codebase
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -42,9 +44,33 @@ jobs:
       run: |
         python -m pytest --cov=backend --cov-report=term-missing --verbose
 
+  security-and-vulnerability-audit:
+    name: Security & Dependency Vulnerability Audit
+    needs: test-and-lint
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Codebase
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Dependency Security Audit (pip-audit)
+      run: |
+        python -m pip install --upgrade pip pip-audit
+        pip-audit -r requirements.txt || echo "::warning ::Dependency audit flagged advisories for review."
+
+    - name: Secret Scanning Check
+      run: |
+        echo "Scanning repository for accidentally committed secrets..."
+        ! grep -rE "(SECRET_KEY|ADMIN_PIN|STEP_UP_PIN|POSTGRES_PASSWORD|REDIS_PASSWORD)\s*=\s*['\"][a-zA-Z0-9_-]{8,}['\"]" backend/ ml/ alembic/ docker-compose.yml
+
   docker-build-and-smoke-test:
     name: Production Docker Build & Smoke Test
-    needs: test-and-lint
+    needs: security-and-vulnerability-audit
     runs-on: ubuntu-latest
 
     steps:
