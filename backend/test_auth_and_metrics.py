@@ -3,11 +3,18 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import pytest
 from auth import create_access_token, decode_access_token
+from database import Base, engine
 from fastapi.testclient import TestClient
 from main import app
 
 client = TestClient(app)
+
+@pytest.fixture(autouse=True)
+def setup_db():
+    Base.metadata.create_all(bind=engine)
+    yield
 
 def test_jwt_token_creation_and_decoding():
     token = create_access_token({"sub": "Student_01", "session_id": "test-uuid"})
