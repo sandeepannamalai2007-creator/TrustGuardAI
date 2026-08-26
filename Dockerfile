@@ -17,7 +17,11 @@ RUN groupadd -r trustguard && useradd -r -g trustguard -m -d /home/trustguard tr
 
 WORKDIR /app
 
-# Copy and install Python dependencies
+# Ensure ML artifacts storage directory structure exists with dedicated write permissions
+RUN mkdir -p /app/ml/artifacts/production /app/ml/artifacts/candidates /app/ml/artifacts/archive \
+    && chown -R trustguard:trustguard /app
+
+# Copy and install production-only Python dependencies
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 

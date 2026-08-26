@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  # 1. PostgreSQL Database Service
+  # 1. PostgreSQL Database Service (Persistent Data Store)
   db:
     image: postgres:15-alpine
     container_name: trustguard-db
@@ -17,13 +17,13 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - internal_network
-    # Production security: PostgreSQL is isolated inside internal network (no exposed host ports)
+      - trustguard_network
+    # Production security: PostgreSQL is isolated inside trustguard_network (no exposed host ports)
     # ports:
     #   - "5432:5432"
     restart: unless-stopped
 
-  # 2. Redis Shared Cache & Rate Limiting Service
+  # 2. Redis Shared Rate Limiting Service
   redis:
     image: redis:7-alpine
     container_name: trustguard-redis
@@ -36,13 +36,13 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - internal_network
-    # Production security: Redis is isolated inside internal network (no exposed host ports)
+      - trustguard_network
+    # Production security: Redis is isolated inside trustguard_network (no exposed host ports)
     # ports:
     #   - "6379:6379"
     restart: unless-stopped
 
-  # 3. TrustGuard API Service
+  # 3. TrustGuard API Service (Continuous Biometric Risk Processor)
   api:
     build:
       context: .
@@ -73,11 +73,11 @@ services:
     cap_drop:
       - ALL
     networks:
-      - internal_network
+      - trustguard_network
     restart: unless-stopped
 
 networks:
-  internal_network:
+  trustguard_network:
     driver: bridge
 
 volumes:

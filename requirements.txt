@@ -15,6 +15,3 @@ httpx>=0.24.0
 pyjwt>=2.7.0
 pydantic-settings>=2.0.0
 prometheus-client>=0.16.0
-pytest>=7.0.0
-pytest-cov>=4.0.0
-ruff>=0.1.0

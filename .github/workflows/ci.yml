@@ -8,6 +8,7 @@ on:
 
 jobs:
   test-and-lint:
+    name: Unit Tests & Ruff Linter
     runs-on: ubuntu-latest
 
     steps:
@@ -23,7 +24,7 @@ jobs:
     - name: Install Dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt ruff pytest-cov
+        pip install -r requirements-dev.txt
 
     - name: Train ML Model if Artifact Missing
       run: |
@@ -31,12 +32,62 @@ jobs:
 
     - name: Lint Codebase with Ruff
       run: |
-        ruff check backend/ --ignore E501,E402
+        ruff check backend/ ml/ alembic/ --ignore E501,E402
 
     - name: Run Pytest Suite with Coverage
       env:
-        TRUSTGUARD_JWT_SECRET: "ci-test-jwt-secret-key-12345"
-        TRUSTGUARD_ADMIN_PIN: "1234"
-        TRUSTGUARD_STEP_UP_PIN: "9999"
+        TRUSTGUARD_JWT_SECRET: "ci-test-jwt-secret-key-123456789012345"
+        TRUSTGUARD_ADMIN_PIN: "123456"
+        TRUSTGUARD_STEP_UP_PIN: "999999"
       run: |
         python -m pytest --cov=backend --cov-report=term-missing --verbose
+
+  docker-build-and-smoke-test:
+    name: Production Docker Build & Smoke Test
+    needs: test-and-lint
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Codebase
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build Production Docker Image
+      run: |
+        docker build -t trustguard-api:latest .
+
+    - name: Verify Non-Root User Execution
+      run: |
+        USER_ID=$(docker run --rm trustguard-api:latest whoami)
+        echo "Container user: $USER_ID"
+        if [ "$USER_ID" = "root" ]; then
+          echo "FAIL: Container is running as root!"
+          exit 1
+        fi
+        echo "PASS: Container runs as non-root user '$USER_ID'"
+
+    - name: Run Docker Compose Environment
+      env:
+        TRUSTGUARD_ENV: "production"
+        TRUSTGUARD_JWT_SECRET: "ci-production-jwt-secret-key-32-chars-minimum"
+        TRUSTGUARD_ADMIN_PIN: "admin123456"
+        TRUSTGUARD_STEP_UP_PIN: "stepup999999"
+        POSTGRES_DB: "trustguard_db"
+        POSTGRES_USER: "trustguard_user"
+        POSTGRES_PASSWORD: "trustguard_secure_db_pass"
+        REDIS_PASSWORD: "redis_secure_pass"
+      run: |
+        docker compose up -d --build
+        sleep 10
+
+    - name: Check Container Health Probes
+      run: |
+        curl --fail --retry 5 --retry-delay 3 http://localhost:8000/live
+        curl --fail --retry 5 --retry-delay 3 http://localhost:8000/ready
+
+    - name: Teardown Compose Environment
+      if: always()
+      run: |
+        docker compose down -v
