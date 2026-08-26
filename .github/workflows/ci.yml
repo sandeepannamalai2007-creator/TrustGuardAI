@@ -45,31 +45,33 @@ jobs:
         python -m pytest --cov=backend --cov-report=term-missing --verbose
 
   security-and-vulnerability-audit:
-    name: Security & Dependency Vulnerability Audit
+    name: Dependency Audit & Secret Scanning (Hard Security Gate)
     needs: test-and-lint
     runs-on: ubuntu-latest
 
     steps:
     - name: Checkout Codebase
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
 
-    - name: Dependency Security Audit (pip-audit)
+    - name: Hard Dependency Security Audit (pip-audit)
       run: |
         python -m pip install --upgrade pip pip-audit
-        pip-audit -r requirements.txt || echo "::warning ::Dependency audit flagged advisories for review."
+        pip-audit -r requirements.txt
 
-    - name: Secret Scanning Check
-      run: |
-        echo "Scanning repository for accidentally committed secrets..."
-        ! grep -rE "(SECRET_KEY|ADMIN_PIN|STEP_UP_PIN|POSTGRES_PASSWORD|REDIS_PASSWORD)\s*=\s*['\"][a-zA-Z0-9_-]{8,}['\"]" backend/ ml/ alembic/ docker-compose.yml
+    - name: Automated Secret Scanning (Gitleaks)
+      uses: gitleaks/gitleaks-action@v2
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   docker-build-and-smoke-test:
-    name: Production Docker Build, Trivy Scan & Smoke Test
+    name: Production Docker Build, Hard Trivy Scan & Smoke Test
     needs: security-and-vulnerability-audit
     runs-on: ubuntu-latest
 
@@ -84,12 +86,12 @@ jobs:
       run: |
         docker build -t trustguard-api:latest .
 
-    - name: Trivy Container Image Vulnerability Scan
+    - name: Hard Trivy Container Image Vulnerability Gate
       uses: aquasecurity/trivy-action@master
       with:
         image-ref: 'trustguard-api:latest'
         format: 'table'
-        exit-code: '0'
+        exit-code: '1'
         ignore-unfixed: true
         vuln-type: 'os,library'
         severity: 'CRITICAL,HIGH'
@@ -120,12 +122,26 @@ jobs:
         TRUSTED_PROXIES: "127.0.0.1"
       run: |
         docker compose up -d --build
-        sleep 10
 
-    - name: Check Container Health Probes
+    - name: Resilient Container Health Probe Verification Loop
       run: |
-        curl --fail --retry 5 --retry-delay 3 http://localhost:8000/live
-        curl --fail --retry 5 --retry-delay 3 http://localhost:8000/ready
+        echo "Polling TrustGuard API container until healthy..."
+        SUCCESS=0
+        for i in $(seq 1 30); do
+          if curl -s -f http://localhost:8000/live > /dev/null && curl -s -f http://localhost:8000/ready > /dev/null; then
+            echo "PASS: TrustGuard API containers passed /live and /ready health probes after ${i} tries!"
+            SUCCESS=1
+            break
+          fi
+          echo "Attempt ${i}/30: Containers starting, sleeping 2s..."
+          sleep 2
+        done
+
+        if [ "$SUCCESS" -ne 1 ]; then
+          echo "FAIL: Container health probe timed out!"
+          docker compose logs
+          exit 1
+        fi
 
     - name: Teardown Compose Environment
       if: always()
