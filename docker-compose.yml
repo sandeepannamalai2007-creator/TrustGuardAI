@@ -6,13 +6,13 @@ services:
     image: postgres:15-alpine
     container_name: trustguard-db
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-trustguard_db}
-      POSTGRES_USER: ${POSTGRES_USER:-trustguard_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-trustguard_secure_db_pass}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-trustguard_user} -d ${POSTGRES_DB:-trustguard_db}"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -27,11 +27,11 @@ services:
   redis:
     image: redis:7-alpine
     container_name: trustguard-redis
-    command: redis-server --requirepass ${REDIS_PASSWORD:-redis_secure_pass}
+    command: redis-server --requirepass ${REDIS_PASSWORD}
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a ${REDIS_PASSWORD:-redis_secure_pass} ping | grep PONG"]
+      test: ["CMD-SHELL", "redis-cli -a $${REDIS_PASSWORD} ping | grep PONG"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -56,18 +56,18 @@ services:
       redis:
         condition: service_healthy
     environment:
-      - TRUSTGUARD_ENV=${TRUSTGUARD_ENV:-production}
-      - TRUSTGUARD_JWT_SECRET=${TRUSTGUARD_JWT_SECRET:-super-secret-trustguard-jwt-key-min-32-chars-prod}
-      - TRUSTGUARD_ADMIN_PIN=${TRUSTGUARD_ADMIN_PIN:-admin_secure_pin_123456}
-      - TRUSTGUARD_STEP_UP_PIN=${TRUSTGUARD_STEP_UP_PIN:-stepup_secure_pin_999999}
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-trustguard_user}:${POSTGRES_PASSWORD:-trustguard_secure_db_pass}@db:5432/${POSTGRES_DB:-trustguard_db}
+      - TRUSTGUARD_ENV=${TRUSTGUARD_ENV}
+      - TRUSTGUARD_JWT_SECRET=${TRUSTGUARD_JWT_SECRET}
+      - TRUSTGUARD_ADMIN_PIN=${TRUSTGUARD_ADMIN_PIN}
+      - TRUSTGUARD_STEP_UP_PIN=${TRUSTGUARD_STEP_UP_PIN}
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-redis_secure_pass}
-      - REDIS_TIMEOUT=2.0
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:8000,http://127.0.0.1:8000,http://localhost}
-      - ENABLE_HTTPS_REDIRECT=${ENABLE_HTTPS_REDIRECT:-false}
-      - TRUSTED_PROXIES=${TRUSTED_PROXIES:-127.0.0.1,172.16.0.0/12,10.0.0.0/8}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_TIMEOUT=${REDIS_TIMEOUT:-2.0}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
+      - ENABLE_HTTPS_REDIRECT=${ENABLE_HTTPS_REDIRECT}
+      - TRUSTED_PROXIES=${TRUSTED_PROXIES}
     security_opt:
       - no-new-privileges:true
     cap_drop:

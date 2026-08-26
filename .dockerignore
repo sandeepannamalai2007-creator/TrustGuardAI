@@ -41,8 +41,8 @@ saved_model
 ml/artifacts/candidates
 ml/artifacts/archive
 
-# Keep active production ML artifacts:
-# !ml/mahalanobis_reference.pkl
-# !ml/calibration.json
-# !ml/model_metadata.json
-# !ml/artifacts/production
+# Keep active production ML artifacts
+!ml/mahalanobis_reference.pkl
+!ml/calibration.json
+!ml/model_metadata.json
+!ml/artifacts/production
