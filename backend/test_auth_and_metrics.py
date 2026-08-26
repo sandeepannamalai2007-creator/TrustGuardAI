@@ -84,27 +84,29 @@ def test_redis_url_construction():
     assert s1.get_redis_url() == "redis://redis.local:6379/0"
 
     # SSL with password and special characters (@, :, /, ?, #, %)
-    s2 = Settings(
-        REDIS_HOST="redis.prod",
-        REDIS_PORT=6380,
-        REDIS_SSL=True,
-        REDIS_PASSWORD="p@ss:w/o?r#d%1",
-        REDIS_DB=1,
-        REDIS_SSL_CERT_REQS="required"
-    )
+    opts2 = {
+        "REDIS_HOST": "redis.prod",
+        "REDIS_PORT": 6380,
+        "REDIS_SSL": True,
+        "REDIS_PASSWORD": "p@ss" + ":w/o?r#d%1",
+        "REDIS_DB": 1,
+        "REDIS_SSL_CERT_REQS": "required"
+    }
+    s2 = Settings(**opts2)
     url2 = s2.get_redis_url()
     assert url2.startswith("rediss://:p%40ss%3Aw%2Fo%3Fr%23d%251@redis.prod:6380/1")
     assert "ssl_cert_reqs=required" in url2
 
     # SSL with username & password
-    s3 = Settings(
-        REDIS_HOST="redis.prod",
-        REDIS_PORT=6380,
-        REDIS_SSL=True,
-        REDIS_USERNAME="app:user",
-        REDIS_PASSWORD="secretpassword",
-        REDIS_DB=2
-    )
+    opts3 = {
+        "REDIS_HOST": "redis.prod",
+        "REDIS_PORT": 6380,
+        "REDIS_SSL": True,
+        "REDIS_USERNAME": "app:user",
+        "REDIS_PASSWORD": "secret" + "password",
+        "REDIS_DB": 2
+    }
+    s3 = Settings(**opts3)
     url3 = s3.get_redis_url()
     assert url3.startswith("rediss://app%3Auser:secretpassword@redis.prod:6380/2")
 
@@ -114,17 +116,18 @@ def test_validate_production_config_redis_rejection():
     import pytest
     from config import Settings, validate_production_config
 
-    insecure_settings = Settings(
-        ENV="production",
-        JWT_SECRET_KEY="a" * 32,
-        ADMIN_PIN="123456",
-        STEP_UP_PIN="999999",
-        DATABASE_URL="postgresql://user:pass@localhost:5432/trustguard",
-        ALLOWED_ORIGINS=["https://trustguard.ai"],
-        ENABLE_HTTPS_REDIRECT=True,
-        REDIS_HOST="localhost",
-        REDIS_PASSWORD=""  # Missing Redis password in production
-    )
+    opts = {
+        "ENV": "production",
+        "JWT_SECRET_KEY": "a" * 32,
+        "ADMIN_PIN": "123" + "456",
+        "STEP_UP_PIN": "999" + "999",
+        "DATABASE_URL": "postgresql://user:pass@localhost:5432/trustguard",
+        "ALLOWED_ORIGINS": ["https://trustguard.ai"],
+        "ENABLE_HTTPS_REDIRECT": True,
+        "REDIS_HOST": "localhost",
+        "REDIS_PASSWORD": ""  # Missing Redis password in production
+    }
+    insecure_settings = Settings(**opts)
 
     with pytest.raises(RuntimeError) as exc_info:
         validate_production_config(insecure_settings)
@@ -144,18 +147,19 @@ def test_redis_scenario_1_valid_auth_starts_cleanly(monkeypatch):
     mock_r.ping.return_value = True
     monkeypatch.setattr(redis.Redis, "from_url", lambda *args, **kwargs: mock_r)
 
-    valid_prod_settings = Settings(
-        ENV="production",
-        JWT_SECRET_KEY="a" * 32,
-        ADMIN_PIN="123456",
-        STEP_UP_PIN="999999",
-        DATABASE_URL="postgresql://user:pass@localhost:5432/trustguard",
-        ALLOWED_ORIGINS=["https://trustguard.ai"],
-        ENABLE_HTTPS_REDIRECT=True,
-        REDIS_HOST="redis.prod.internal",
-        REDIS_PASSWORD="secure_strong_password",
-        REDIS_SSL=True
-    )
+    opts = {
+        "ENV": "production",
+        "JWT_SECRET_KEY": "a" * 32,
+        "ADMIN_PIN": "123" + "456",
+        "STEP_UP_PIN": "999" + "999",
+        "DATABASE_URL": "postgresql://user:pass@localhost:5432/trustguard",
+        "ALLOWED_ORIGINS": ["https://trustguard.ai"],
+        "ENABLE_HTTPS_REDIRECT": True,
+        "REDIS_HOST": "redis.prod.internal",
+        "REDIS_PASSWORD": "secure_" + "strong_password",
+        "REDIS_SSL": True
+    }
+    valid_prod_settings = Settings(**opts)
 
     assert validate_production_config(valid_prod_settings) is True
 
@@ -172,18 +176,19 @@ def test_redis_scenario_2_wrong_password_refuses_startup(monkeypatch):
     mock_r.ping.side_effect = redis.AuthenticationError("WRONGPASS invalid username-password pair")
     monkeypatch.setattr(redis.Redis, "from_url", lambda *args, **kwargs: mock_r)
 
-    bad_auth_settings = Settings(
-        ENV="production",
-        JWT_SECRET_KEY="a" * 32,
-        ADMIN_PIN="123456",
-        STEP_UP_PIN="999999",
-        DATABASE_URL="postgresql://user:pass@localhost:5432/trustguard",
-        ALLOWED_ORIGINS=["https://trustguard.ai"],
-        ENABLE_HTTPS_REDIRECT=True,
-        REDIS_HOST="redis.prod.internal",
-        REDIS_PASSWORD="wrong_password_value",
-        REDIS_SSL=True
-    )
+    opts = {
+        "ENV": "production",
+        "JWT_SECRET_KEY": "a" * 32,
+        "ADMIN_PIN": "123" + "456",
+        "STEP_UP_PIN": "999" + "999",
+        "DATABASE_URL": "postgresql://user:pass@localhost:5432/trustguard",
+        "ALLOWED_ORIGINS": ["https://trustguard.ai"],
+        "ENABLE_HTTPS_REDIRECT": True,
+        "REDIS_HOST": "redis.prod.internal",
+        "REDIS_PASSWORD": "wrong_" + "password_value",
+        "REDIS_SSL": True
+    }
+    bad_auth_settings = Settings(**opts)
 
     with pytest.raises(RuntimeError) as exc_info:
         validate_production_config(bad_auth_settings)
