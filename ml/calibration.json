@@ -1,6 +1,8 @@
 {
-  "p_min": 0.0,
-  "p_max": 100.0,
-  "selected_architecture": "Model B: Mahalanobis Distance (Identity Profile)",
-  "selected_feature_variant": "Variant 2: 7D Extended Telemetry"
+  "p_min": -0.5,
+  "p_max": 0.5,
+  "selected_architecture": "Isolation Forest inference + Mahalanobis profile similarity",
+  "selected_feature_variant": "7D Extended Telemetry",
+  "calibration_status": "INTERIM_RANGE_REQUIRES_FRESH_DATA_CALIBRATION",
+  "note": "These bounds are a safe interim Isolation Forest decision-score range. Run ml/train_model.py and the production evaluation pipeline to replace them with empirical percentile bounds from the current dataset."
 }
