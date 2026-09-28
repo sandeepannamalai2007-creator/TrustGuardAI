@@ -1,21 +1,24 @@
 {
-  "model_version": "v126",
-  "winning_architecture": "Model B: Mahalanobis Distance (Identity Profile)",
-  "winning_feature_variant": "Variant 2: 7D Extended Telemetry",
-  "feature_indices": [
-    0,
-    1,
-    2,
-    3,
-    4,
-    5,
-    6
+  "model_version": "pending-fresh-evaluation",
+  "inference_model": "Isolation Forest",
+  "profile_model": "Mahalanobis Distance",
+  "feature_variant": "7D Extended Telemetry",
+  "feature_indices": [0, 1, 2, 3, 4, 5, 6],
+  "feature_names": [
+    "avg_dwell_time_ms",
+    "std_dwell_time_ms",
+    "avg_flight_time_ms",
+    "std_flight_time_ms",
+    "typing_speed_cps",
+    "dwell_flight_ratio",
+    "pause_frequency"
   ],
-  "training_samples": 30,
-  "training_users": 2,
-  "production_eer": 43.33,
-  "production_auc": 0.49,
-  "dataset_hash": "33a6d8c13c5e41b3a73b997be191a49c66c87e2efc8a288f397041e423d025d9",
-  "override_by": "test_admin",
-  "created_at": "2026-08-26T07:38:01.691130+00:00"
+  "final_score_weights": {
+    "isolation_forest": 0.7,
+    "profile_similarity": 0.3
+  },
+  "production_eer": null,
+  "production_auc": null,
+  "metrics_status": "PENDING_FRESH_EVALUATION",
+  "note": "Performance metrics are intentionally unset until the current production inference pipeline is evaluated end-to-end."
 }
