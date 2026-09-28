@@ -1,213 +1,188 @@
-# 🛡️ TrustGuard AI: Zero-Trust Continuous Biometrics Console
+# 🛡️ TrustGuard AI — Zero-Trust Continuous Behavioral Authentication
 
-[![Python Version](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.95.0+-009688.svg)](https://fastapi.tiangolo.com/)
-[![scikit-learn](https://img.shields.io/badge/scikit--learn-1.2.0+-orange.svg)](https://scikit-learn.org/)
-[![Coverage 90%](https://img.shields.io/badge/coverage-90%25-brightgreen.svg)](docs/COVERAGE_REPORT.md)
-[![CI Pipeline](https://github.com/sandeepannamalai2007-creator/TrustGuardAI/actions/workflows/ci.yml/badge.svg)](https://github.com/sandeepannamalai2007-creator/TrustGuardAI/actions)
+[![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![FastAPI](https://img.shields.io/badge/FastAPI-API-009688.svg)](https://fastapi.tiangolo.com/)
+[![scikit-learn](https://img.shields.io/badge/scikit--learn-ML-orange.svg)](https://scikit-learn.org/)
+[![Coverage](https://img.shields.io/badge/coverage-90%25-brightgreen.svg)](docs/COVERAGE_REPORT.md)
 
+TrustGuard AI is a continuous behavioral-authentication system that evaluates whether the current user still matches their enrolled behavioral profile during an active session. Instead of relying only on authentication at login, it periodically analyzes **keystroke dynamics** and supporting telemetry, combines anomaly detection with personalized profile similarity, and converts the result into a trust score and security state.
 
-TrustGuard AI is a continuous biometric identity authentication console. Instead of authenticating a user just once at login (e.g., via password or MFA), TrustGuard AI continuously verifies that the person sitting at the keyboard is the legitimate user by analyzing their typing dynamics and mouse movement kinematics in real-time.
+> **Security position:** TrustGuard AI is a research/demo continuous-verification layer. It is not intended to replace conventional authentication or MFA.
 
 ---
 
 ## 📐 Architecture & System Flow
 
-The diagram below outlines how user telemetry travels from the frontend workstation to the FastAPI backend, where a hybrid ML model computes identity scores, flags threats, enforces state escalation, and logs results:
-
 ```mermaid
 graph TD
-    A["User Workstation (capture.html)"] -->|"Keyboard Dynamics & Mouse Kinematics"| B["JavaScript Capture Engine"]
-    B -->|"POST /session/features (Bearer JWT)"| C["FastAPI Main Server (main.py)"]
-    C -->|"Extract Features"| D["Trust Engine Evaluation"]
-    D -->|"1. scikit-learn Isolation Forest"| E["Anomalies / Bot Detection"]
-    D -->|"2. Mahalanobis Profile Kernel"| F["Keystroke Biometric Verification"]
-    D -->|"3. Shannon Entropy Check"| G["Anti-Spoofing Bot Verification"]
-    E --> H["Combined Identity Trust Score"]
+    A[User Workstation] --> B[JavaScript Telemetry Capture]
+    B -->|JWT + feature vector| C[FastAPI Backend]
+    C --> D[Trust Engine]
+    D --> E[Isolation Forest]
+    D --> F[Personalized Mahalanobis Profile]
+    D --> G[Entropy / Bot Checks]
+    E --> H[Composite Trust Score]
     F --> H
     G --> H
-    H -->|"Security State Hysteresis"| I["State Machine (NORMAL/SUSPICIOUS/HIGH_RISK/LOCKED)"]
-    I -->|"Step-Up Challenge if Suspicious"| J["Step-Up PIN Modal"]
-    H -->|"Write Audit Logs"| K["SQLite DB / Redis Session Store"]
-    H -->|"Prometheus Exporter"| L["/metrics Telemetry Endpoint"]
-    
-    style A fill:#0f172a,stroke:#38bdf8,stroke-width:2px,color:#fff
-    style C fill:#0c4a6e,stroke:#38bdf8,stroke-width:2px,color:#fff
-    style H fill:#581c87,stroke:#c084fc,stroke-width:2px,color:#fff
-    style K fill:#14532d,stroke:#4ade80,stroke-width:2px,color:#fff
+    H --> I[Security State Machine]
+    I --> J[NORMAL / SUSPICIOUS / HIGH_RISK / LOCKED]
+    I --> K[Step-Up Re-authentication]
+    H --> L[Audit Logs / Metrics]
 ```
+
+### Runtime decision flow
+
+- **Isolation Forest (70%)** provides global anomaly evidence.
+- **Personalized profile similarity (30%)** measures how closely the current behavior matches the user's historical baseline.
+- **Entropy and micro-variance checks** detect highly repetitive automated timing patterns.
+- A **hysteresis-based state machine** prevents a single noisy observation from immediately escalating or de-escalating the session.
+
+The current profile matcher uses a 7-dimensional behavioral vector: average dwell time, dwell-time variance, average flight time, flight-time variance, typing speed, dwell/flight ratio, and pause count.
 
 ---
 
-## ✨ Enterprise Security Features
+## ✨ Key Features
 
-- 🕵️ **Continuous Identity Verification**: Evaluates keystroke timing features (Dwell Times, Flight Times) and mouse movement speeds every 5 seconds.
-- 🔑 **Cryptographic JWT Session Tokens**: Issuance of PyJWT signed tokens on session initialization with Bearer header verification on `/session/features`.
-- 📊 **Prometheus Telemetry Endpoint**: Real-time metrics exporter at `/metrics` tracking http request rates, status codes, and moving average trust score metrics.
-- 🛡️ **Step-Up Re-Authentication Challenge**: Triggers a dynamic glassmorphic PIN modal overlay (`#stepUpModal`) when security state escalates to `SUSPICIOUS` or `HIGH_RISK`.
-- 📈 **SecOps Dashboard & Real-Time Trend Graph**: Live telemetry trend analysis on canvas (`#secopsChart`), active threat risk badges, and admin emergency force lock/unlock controls.
-- 📥 **CSV Audit Ledger Export**: 1-click administrative export of compliance audit logs formatted as CSV via `GET /session/export/csv`.
-- 🧠 **Adaptive Per-User Biometric Thresholds**: Personalized adaptive security bounds (35% to 65%) based on individual historical typing variance ($\max(35.0, 55.0 - 0.5 \cdot \sigma_{\text{dwell}})$).
-- 🧹 **Automated Data Retention & Pruning**: Automated session cleanup routines purging expired SQLite session records.
-- 🎨 **Unified Light & Dark Theme Support**: Full high-contrast Light & Cyber Dark themes with localStorage persistence and accessible canvas scaling.
+- 🕵️ **Continuous Verification** — evaluates behavioral telemetry throughout an active session.
+- 🧠 **Hybrid Trust Engine** — combines Isolation Forest anomaly scoring with personalized Mahalanobis profile similarity.
+- 🛡️ **Bot Detection** — detects zero-variance and low-entropy timing patterns.
+- 📈 **Adaptive Thresholds** — adjusts the security threshold using historical behavioral stability.
+- 🚨 **Security State Machine** — `NORMAL → SUSPICIOUS → HIGH_RISK → LOCKED` with hysteresis.
+- 🔐 **JWT Session Authentication** — protects telemetry endpoints with session-scoped Bearer tokens.
+- 🔑 **Step-Up Re-authentication** — suspicious sessions can require an additional verification step.
+- 📋 **Audit Ledger** — records session and security events for investigation.
+- 📊 **Prometheus Metrics** — exposes operational metrics for monitoring.
+- 🧹 **Profile Poisoning Protection** — trusted observations are required before behavioral baselines are adapted, with drift controls.
+- 🐳 **Docker Support** — production-oriented containerization with a non-root runtime user.
+- 🧪 **Automated Testing** — backend and frontend tests with coverage reporting.
 
 ---
 
-## 📊 Model Performance & 2-Stage Biometric Architecture Selection
+## 🧪 Model Evaluation Status
 
-TrustGuard AI evaluates biometric identity architectures using a **Session-Disjoint Genuine Testing + Cross-Subject Impostor Evaluation** protocol across all 51 subjects in the CMU Keystroke Dynamics Benchmark Dataset (20,400 total test trials).
+TrustGuard includes a session-disjoint, cross-subject evaluation pipeline for comparing Isolation Forest, Mahalanobis distance, One-Class SVM, and hybrid candidates on the CMU keystroke dataset.
 
-### 🔬 Stage 1 — Architecture Selection Matrix & Hybrid Weight Sweep (4D Core Telemetry)
-> 📌 **Paradigm Note**: Architectures represent different authentication paradigms: global anomaly detection (Isolation Forest) versus per-user identity modeling (Mahalanobis Distance & One-Class SVM).
+**Important:** performance numbers from earlier model versions are intentionally **not presented as current production metrics**. The repository previously contained conflicting model metadata and evaluation results. The current production metadata therefore marks biometric performance as `PENDING_FRESH_EVALUATION` until the exact runtime pipeline is evaluated end-to-end.
 
-| Architecture Candidate | Authentication Paradigm | EER (%) | FAR (@ T=50) | FRR (@ T=50) | ROC-AUC |
-| :--- | :--- | :---: | :---: | :---: | :---: |
-| **Model A: Isolation Forest** | Global Anomaly Detection | 53.43% | 75.00% | 31.98% | 0.4547 |
-| **Model B: Mahalanobis Distance** | **Personal Identity Profile (Winner)** | **26.60%** | **22.47%** | **33.62%** | **0.8092** |
-| **Model D: One-Class SVM** | Per-Subject Personalized Model | 30.52% | **10.89%** | 63.21% | 0.7036 |
-| **Model C: Hybrid (90/10 IF/Mah)** | Hybrid Weight Sweep | 52.21% | 72.07% | 31.75% | 0.4857 |
-| **Model C: Hybrid (70/30 IF/Mah)** | Hybrid Weight Sweep | 47.11% | 65.15% | 30.76% | 0.5502 |
-| **Model C: Hybrid (50/50 IF/Mah)** | Hybrid Weight Sweep | 40.53% | 52.85% | 30.48% | 0.6281 |
-| **Model C: Hybrid (30/70 IF/Mah)** | Hybrid Weight Sweep | 34.45% | 37.74% | 30.76% | 0.7161 |
-| **Model C: Hybrid (10/90 IF/Mah)** | Hybrid Weight Sweep | 28.74% | 26.44% | 32.21% | 0.7857 |
+Run the evaluation pipeline after installing the dependencies:
 
-> 💡 **Empirical Finding**: As weight shifts away from Isolation Forest and toward Mahalanobis Distance ($90/10 \to 10/90 \to 0/100$), performance monotonically improves ($\text{EER: } 52.21\% \to 28.74\% \to \mathbf{26.60\%}$, $\text{AUC: } 0.4857 \to 0.7857 \to \mathbf{0.8092}$). This proves that **Model B (Mahalanobis Distance Profile)** is the evidence-based winner for biometric identity verification.
-
-### 🛡️ Adversarial Stress Testing (Bot Evasion & Poisoning Defense)
-```
-Adversarial & Poisoning Defense
-──────────────────────────────────────────────────────────────────────────
-Script Bot Evasion FAR       : 0.00% (100.00% Blocked via Entropy IDS)
-Erratic Attacker Evasion FAR  : 0.00% (100.00% Blocked via Anomaly Check)
-Profile Poisoning Resistance : 100.00% (Shielded via Multi-Factor Criteria & 10% Drift Cap)
-──────────────────────────────────────────────────────────────────────────
+```bash
+python ml/evaluate_model.py
 ```
 
-> Detailed methodologies, mathematical derivations, and limitation analyses are documented in [`docs/ML_EVALUATION.md`](docs/ML_EVALUATION.md). Generated evaluation plots are stored in [`ml/evaluation_results/`](ml/evaluation_results/).
+Only metrics generated from the current production inference path should be reported in the final resume/README benchmark table.
 
-
-
-
-
+See [`docs/ML_EVALUATION.md`](docs/ML_EVALUATION.md) for the evaluation methodology.
 
 ---
 
 ## 📂 Project Structure
 
-```
+```text
 TrustGuardAI/
-├── .github/workflows/
-│   └── ci.yml             # GitHub Actions CI/CD Pipeline (Ruff + Pytest)
+├── .github/workflows/       # CI/CD and security checks
 ├── backend/
-│   ├── main.py            # FastAPI Application & Security Endpoints
-│   ├── config.py          # Centralized Pydantic Settings & Config
-│   ├── auth.py            # PyJWT Token Issuance & Bearer Dependencies
-│   ├── metrics.py         # Prometheus Telemetry Collector
-│   ├── database.py        # SQLite Database connection setup
-│   ├── db_models.py       # SQLAlchemy Database Schemas
-│   ├── crud.py            # Database CRUD helper queries
-│   ├── session_manager.py # Session Manager with Redis & SQLite Stores
-│   ├── trust_engine.py    # Hybrid biometric decision maker & state machine
-│   └── profile_matcher.py # Mahalanobis distance & adaptive threshold engine
+│   ├── main.py              # FastAPI routes and application lifecycle
+│   ├── config.py            # Environment/configuration management
+│   ├── auth.py              # JWT authentication
+│   ├── metrics.py           # Prometheus metrics
+│   ├── database.py          # Database configuration
+│   ├── db_models.py         # SQLAlchemy models
+│   ├── crud.py              # Database operations
+│   ├── session_manager.py   # Session storage
+│   ├── trust_engine.py      # Trust scoring and security states
+│   └── profile_matcher.py   # Personalized Mahalanobis comparison
 ├── ml/
-│   ├── train_model.py     # Model training script
-│   ├── evaluate_model.py  # Model evaluation and FAR/FRR test suite
-│   ├── preprocess.py      # Feature engineering helper
-│   ├── model.pkl          # Serialized scikit-learn Isolation Forest model
-│   └── scaler.pkl         # Serialized StandardScaler model parameters
+│   ├── train_model.py       # Production-compatible model training
+│   ├── evaluate_model.py    # Biometric evaluation pipeline
+│   ├── preprocess.py        # 7D feature engineering
+│   ├── predictor.py         # Production ML inference
+│   ├── model.pkl            # Serialized Isolation Forest
+│   ├── scaler.pkl           # Matching StandardScaler
+│   └── artifacts/           # Model registry metadata
 ├── frontend/
-│   ├── capture.html       # Cybersecurity Console UI & SecOps Dashboard
-│   ├── style.css          # Glassmorphic cyber themes & Light/Dark styling
-│   └── script.js          # Telemetry collection, SecOps chart & Step-Up JS
-└── trustguard.db          # SQLite Database File
+│   ├── capture.html         # Security dashboard
+│   ├── style.css            # Dashboard styling
+│   └── script.js            # Telemetry collection and UI logic
+├── tests/                   # Automated tests
+├── docs/                    # Evaluation and coverage documentation
+├── Dockerfile
+├── docker-compose.yml
+├── requirements.txt
+└── README.md
 ```
+
+> Local SQLite databases are runtime artifacts and should not contain real user biometric data in a public repository.
 
 ---
 
 ## 🚀 Getting Started
 
-### 1. Setup virtual environment & dependencies
+### 1. Clone and install
+
 ```bash
-# Clone repository
 git clone https://github.com/sandeepannamalai2007-creator/TrustGuardAI.git
 cd TrustGuardAI
 
-# Create and activate virtual environment
 python -m venv venv
-.\venv\Scripts\activate   # Windows
-source venv/bin/activate # Linux/macOS
 
-# Install requirements
+# Windows
+.\venv\Scripts\activate
+
+# Linux/macOS
+source venv/bin/activate
+
 pip install -r requirements.txt
 ```
 
-### 2. Run FastAPI Backend
+### 2. Run the backend
+
 ```bash
 python -m uvicorn main:app --app-dir backend --host 127.0.0.1 --port 8000
 ```
 
-### 3. Run Automated Tests
+### 3. Run the frontend
+
+Serve `frontend/` with a local static server such as VS Code Live Server and open `capture.html`.
+
+### 4. Run tests
+
 ```bash
 python -m pytest --verbose
 ```
 
-### 4. Docker Deployment (Recommended for Production)
-```bash
-# Copy and configure your secrets
-cp .env.example .env  # set TRUSTGUARD_JWT_SECRET, TRUSTGUARD_ADMIN_PIN, TRUSTGUARD_STEP_UP_PIN
+### 5. Docker
 
-# Start backend + Redis in one command
-docker compose up
+For the containerized deployment path:
+
+```bash
+docker compose up --build
 ```
+
+Configure production secrets through environment variables. Never commit real credentials to the repository.
 
 ---
 
-## 🗄️ Production Deployment Notes
+## 🔒 Security & Privacy
 
-> [!IMPORTANT]
-> **SQLite is used for zero-configuration local development only.**
-> Under concurrent load (multiple simultaneous exam sessions), SQLite's single-writer lock will become a bottleneck.
-> For production, migrate to **PostgreSQL** by setting the `DATABASE_URL` environment variable:
-> ```
-> DATABASE_URL=postgresql://user:password@host:5432/trustguard
-> ```
-> No code changes are required — SQLAlchemy handles the dialect automatically.
+TrustGuard processes behavioral telemetry such as keystroke timing and mouse-related signals. A production deployment should apply data minimization, retention limits, access controls, encryption, and appropriate user consent.
 
-### Required Environment Variables (Production)
+Production secrets must be supplied through environment variables or a secret manager. Development PINs or JWT defaults must never be treated as production credentials.
 
-| Variable | Purpose | Default (Insecure) |
-|---|---|---|
-| `TRUSTGUARD_JWT_SECRET` | JWT signing key | `super-secret-...-change-in-production` |
-| `TRUSTGUARD_ADMIN_PIN` | Admin ledger & override PIN | `1234` |
-| `TRUSTGUARD_STEP_UP_PIN` | User step-up re-auth PIN | `9999` |
-| `DATABASE_URL` | PostgreSQL connection string | *(empty — falls back to SQLite)* |
-| `REDIS_HOST` | Redis hostname | `localhost` |
-
-TrustGuard AI logs a **CRITICAL** warning on startup if any of these remain at their insecure defaults.
+See [`SECURITY.md`](SECURITY.md) for vulnerability reporting guidance.
 
 ---
 
-## 🤖 ML Model Retraining
+## ⚠️ Limitations
 
-The Isolation Forest model ships pre-trained on the CMU Keystroke Dynamics dataset.
-As users interact with TrustGuard AI, trusted session data accumulates in the `trust_logs` table.
-
-**To retrain the model on accumulated data:**
-```bash
-# CLI (requires ≥ 50 trusted samples, or use --force)
-python ml/retrain.py
-python ml/retrain.py --force   # bypass sample threshold
-
-# API (hot-reloads model without server restart)
-curl -X POST http://127.0.0.1:8000/admin/retrain \
-  -H "X-Admin-PIN: your_admin_pin"
-```
-
-The retraining log is saved to `ml/saved_model/retrain_log.json`.
+- Behavioral patterns can change because of fatigue, stress, hardware, environment, or user context.
+- Behavioral authentication can produce false positives and false negatives.
+- The current evaluation pipeline must be rerun whenever the production feature/model pipeline changes.
+- The system is a continuous-verification layer, not a replacement for primary authentication or MFA.
 
 ---
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License. See [`LICENSE`](LICENSE).
