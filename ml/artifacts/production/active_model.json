@@ -1,6 +1,6 @@
 {
-  "active_version": "v125",
-  "previous_version": "v126",
-  "activated_at": "2026-08-26T07:38:01.849139+00:00",
-  "activation_reason": "MANUAL_ROLLBACK"
+  "active_version": "pending-fresh-evaluation",
+  "previous_version": "v125",
+  "activated_at": null,
+  "activation_reason": "ARTIFACTS_REQUIRING_FRESH_EVALUATION"
 }
