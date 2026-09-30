@@ -29,16 +29,13 @@ class Settings(BaseSettings):
     REDIS_TIMEOUT: float = float(os.environ.get("REDIS_TIMEOUT", "2.0"))
 
     def get_redis_url(self) -> str:
-        """Constructs production-grade Redis URL supporting TLS (rediss://), URL-encoded auth, and cert validation."""
+        """Construct a Redis URL with optional TLS and URL-encoded credentials."""
         scheme = "rediss" if self.REDIS_SSL else "redis"
         auth = ""
         if self.REDIS_USERNAME and self.REDIS_PASSWORD:
-            encoded_user = urllib.parse.quote(self.REDIS_USERNAME, safe="")
-            encoded_pass = urllib.parse.quote(self.REDIS_PASSWORD, safe="")
-            auth = f"{encoded_user}:{encoded_pass}@"
+            auth = f"{urllib.parse.quote(self.REDIS_USERNAME, safe='')}:{urllib.parse.quote(self.REDIS_PASSWORD, safe='')}@"
         elif self.REDIS_PASSWORD:
-            encoded_pass = urllib.parse.quote(self.REDIS_PASSWORD, safe="")
-            auth = f":{encoded_pass}@"
+            auth = f":{urllib.parse.quote(self.REDIS_PASSWORD, safe='')}@"
 
         query_params = {}
         if self.REDIS_SSL:
@@ -49,27 +46,27 @@ class Settings(BaseSettings):
         query_str = f"?{urllib.parse.urlencode(query_params)}" if query_params else ""
         return f"{scheme}://{auth}{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}{query_str}"
 
-
     # Rate Limiting & Security
+    # Includes common VS Code Live Server defaults so the frontend can call
+    # the local API during development without CORS failures.
     ALLOWED_ORIGINS: list[str] = [
         "http://localhost",
         "http://127.0.0.1",
         "http://localhost:8000",
         "http://127.0.0.1:8000",
-        "null"  # Local file:// URI support for development
+        "http://localhost:5500",
+        "http://127.0.0.1:5500",
+        "http://localhost:5501",
+        "http://127.0.0.1:5501",
+        "null"
     ]
     RATE_LIMIT_START: str = "15/minute"
     RATE_LIMIT_HISTORY: str = "10/minute"
     RATE_LIMIT_AUTH: str = "5/minute"
     RATE_LIMIT_ADMIN_OVERRIDE: str = "10/minute"
     RATE_LIMIT_EXPORT: str = "5/minute"
-    TRUSTED_PROXIES: list[str] = [
-        "127.0.0.1",
-        "::1"
-    ]
+    TRUSTED_PROXIES: list[str] = ["127.0.0.1", "::1"]
     ENABLE_HTTPS_REDIRECT: bool = os.environ.get("ENABLE_HTTPS_REDIRECT", "false").lower() == "true"
-
-
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
@@ -78,10 +75,6 @@ settings = Settings()
 
 
 def validate_production_config(settings_obj: Settings | None = None) -> bool:
-    """
-    🔴 Items 1 & 2: Validates production security configuration at startup.
-    Halts application startup immediately if insecure defaults or misconfigurations are detected in production.
-    """
     s = settings_obj or settings
     if s.ENV.lower() != "production":
         return True
@@ -89,52 +82,31 @@ def validate_production_config(settings_obj: Settings | None = None) -> bool:
     errors = []
     if not s.JWT_SECRET_KEY or s.JWT_SECRET_KEY == "super-secret-trustguard-key-change-in-production" or len(s.JWT_SECRET_KEY) < 32:
         errors.append("Production requires a strong TRUSTGUARD_JWT_SECRET (min 32 characters, non-default).")
-
     if not s.ADMIN_PIN or s.ADMIN_PIN == "1234" or len(s.ADMIN_PIN) < 6:
         errors.append("Production requires a strong TRUSTGUARD_ADMIN_PIN (min 6 characters, non-default '1234').")
-
     if not s.STEP_UP_PIN or s.STEP_UP_PIN == "9999" or len(s.STEP_UP_PIN) < 6:
         errors.append("Production requires a strong TRUSTGUARD_STEP_UP_PIN (min 6 characters, non-default '9999').")
-
     if not s.DATABASE_URL:
         errors.append("Production requires a non-empty DATABASE_URL.")
-
     if "null" in s.ALLOWED_ORIGINS or "*" in s.ALLOWED_ORIGINS:
         errors.append("Production ALLOWED_ORIGINS cannot contain 'null' or '*'. Must specify explicit production domain.")
-
     if not s.ENABLE_HTTPS_REDIRECT:
         errors.append("Production requires ENABLE_HTTPS_REDIRECT=True.")
-
-    # 🔴 Redis Production Checks: require host and credentials, test connectivity
     if not s.REDIS_HOST:
         errors.append("Production requires REDIS_HOST to be configured.")
-
     if not s.REDIS_PASSWORD:
         errors.append("Production requires REDIS_PASSWORD (unauthenticated Redis is forbidden in production).")
-
     if s.REDIS_SSL and s.REDIS_SSL_CERT_REQS.lower() == "none":
         errors.append("Production Redis with TLS cannot disable certificate verification (REDIS_SSL_CERT_REQS cannot be 'none').")
-
     if s.REDIS_SSL_CA_CERTS and not os.path.exists(s.REDIS_SSL_CA_CERTS):
         errors.append(f"Configured REDIS_SSL_CA_CERTS file not found: {s.REDIS_SSL_CA_CERTS}")
 
     try:
         import redis
-        r = redis.Redis.from_url(
-            s.get_redis_url(),
-            socket_timeout=s.REDIS_TIMEOUT,
-            socket_connect_timeout=s.REDIS_TIMEOUT
-        )
-        r.ping()
-    except Exception as e:  # noqa: BLE001
+        redis.Redis.from_url(s.get_redis_url(), socket_timeout=s.REDIS_TIMEOUT, socket_connect_timeout=s.REDIS_TIMEOUT).ping()
+    except Exception as e:
         errors.append(f"Production Redis connection/auth check failed: {e}")
 
     if errors:
-        error_msg = "🔴 PRODUCTION SECURITY CONFIGURATION FAILURE:\n" + "\n".join(f" - {err}" for err in errors)
-        raise RuntimeError(error_msg)
-
+        raise RuntimeError("🔴 PRODUCTION SECURITY CONFIGURATION FAILURE:\n" + "\n".join(f" - {err}" for err in errors))
     return True
-
-
-
-
